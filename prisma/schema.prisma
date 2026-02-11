@@ -1,0 +1,273 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- 🔐 ระบบผู้ใช้งานและสิทธิ์ ---
+model User {
+  id               Int      @id @default(autoincrement())
+  username         String   @unique
+  password         String
+  fullName         String
+  email            String   @unique
+  position         String?
+  phoneNumber      String?
+  isActive         Boolean  @default(true)
+  role             Role     @relation(fields: [roleId], references: [id])
+  roleId           Int
+  department       Department? @relation(fields: [departmentId], references: [id])
+  departmentId     Int?     // ไม่บังคับสำหรับ Admin, Final Approver (ผู้บริหาร)
+  
+  // สิทธิ์การเข้าถึงหมวดหมู่ (Permissions)
+  accessibleCategories Category[] 
+  
+  // ประวัติกิจกรรม
+  auditLogs              AuditLog[]
+  requests               ITRequestF07[] @relation("Requester")
+  specialApproverMappings SpecialApproverMapping[]
+  
+  // Relations for History
+  approvalHistory        ApprovalHistory[]
+  notifications          Notification[]
+}
+
+model Role {
+  id               Int      @id @default(autoincrement())
+  roleName         String   @unique // Admin, User, Head of Department
+  description      String?  // คำอธิบาย (แสดงผล) — แก้ไขได้
+  allowBulkActions Boolean  @default(false)
+  users            User[]
+  
+  // Relations for Workflow
+  transitions      WorkflowTransition[]
+}
+
+// --- 📋 ระบบ Master Data ---
+model Status {
+  id          Int     @id @default(autoincrement())
+  code        String  @unique // PENDING, PENDING_HOD, CLOSED, ...
+  displayName String  // ชื่อที่แสดงผล
+  colorCode   String  @default("#6b7280") 
+  displayOrder Int    @default(0)
+  isInitialState Boolean @default(false) // สถานะเริ่มต้นของคำร้องหรือไม่
+
+  requests        ITRequestF07[]
+  transitionsFrom WorkflowTransition[] @relation("CurrentStatus")
+  transitionsTo   WorkflowTransition[] @relation("NextStatus")
+}
+
+model Action {
+  id          Int     @id @default(autoincrement())
+  actionName  String  @unique // APPROVE, REJECT, IT_PROCESS, CONFIRM_COMPLETE
+  displayName String  // อนุมัติ, ปฏิเสธ, ดำเนินการ
+  
+  transitions WorkflowTransition[]
+}
+
+model Department {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  isActive       Boolean  @default(true)
+  users          User[]
+  requests       ITRequestF07[]
+}
+
+model Location {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  categories     Category[] 
+  requests       ITRequestF07[]
+}
+
+model Category {
+  id                      Int      @id @default(autoincrement())
+  name                    String   @unique
+  requiresCCSClosing     Boolean  @default(false)
+  locations               Location[]
+  users                   User[]   
+  
+  // Relations
+  requests                ITRequestF07[]
+  docConfigs              DocConfig[]
+  correctionTypes         CorrectionType[]
+  
+  // Config
+  workflowSteps           WorkflowStep[] // Deprecated but kept for migration if needed
+  transitions             WorkflowTransition[]
+  specialApproverMappings SpecialApproverMapping[]
+}
+
+model CorrectionReason {
+  id        Int     @id @default(autoincrement())
+  text      String  // ข้อความเหตุผล
+  isActive  Boolean @default(true)
+}
+
+model CorrectionType {
+  id             Int       @id @default(autoincrement())
+  name           String    @unique
+  displayOrder   Int       @default(10)
+  isActive       Boolean   @default(true)
+  templateString String?   
+  fieldsConfig   String?   
+  categories     Category[]
+  
+  // Relations
+  requestCorrectionTypes RequestCorrectionType[]
+  transitions            WorkflowTransition[]
+}
+
+// --- ⚙️ ระบบ Workflow & Config (State Machine) ---
+
+model WorkflowTransition {
+  id                Int      @id @default(autoincrement())
+  categoryId        Int
+  correctionTypeId  Int?     // Nullable: ถ้าเป็น Null คือใช้กฎทั่วไป (General)
+  currentStatusId   Int
+  actionId          Int
+  requiredRoleId    Int
+  nextStatusId      Int
+  stepSequence      Int      // ใช้สำหรับจัดลำดับการแสดงผล หรือ Parallel Check
+  filterByDepartment Boolean @default(false)
+  
+  category        Category       @relation(fields: [categoryId], references: [id])
+  correctionType  CorrectionType? @relation(fields: [correctionTypeId], references: [id])
+  currentStatus   Status         @relation("CurrentStatus", fields: [currentStatusId], references: [id])
+  action          Action         @relation(fields: [actionId], references: [id])
+  requiredRole    Role           @relation(fields: [requiredRoleId], references: [id])
+  nextStatus      Status         @relation("NextStatus", fields: [nextStatusId], references: [id])
+}
+
+// Kept for backward compatibility/reference, map to Transitions instead
+model WorkflowStep {
+  id                  Int      @id @default(autoincrement())
+  stepSequence        Int      
+  approverRoleName    String   
+  filterByDepartment  Boolean  @default(false) 
+  categoryId          Int
+  category            Category @relation(fields: [categoryId], references: [id])
+}
+
+model SpecialApproverMapping {
+  id            Int      @id @default(autoincrement())
+  categoryId    Int
+  stepSequence  Int
+  userId        Int
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([categoryId, stepSequence])
+}
+
+model DocConfig {
+  id                 Int      @id @default(autoincrement())
+  year               Int      
+  prefix             String   
+  lastRunningNumber  Int      @default(0)
+  categoryId         Int
+  category           Category @relation(fields: [categoryId], references: [id])
+}
+
+model EmailTemplate {
+  id           Int     @id @default(autoincrement())
+  templateName String  @unique // รหัสในระบบ เช่น APPROVAL_NOTIFY, REVISION
+  description  String? // คำอธิบาย
+  subject      String  // หัวข้ออีเมล
+  body         String  @default("") // เนื้อหา HTML
+  placeholders String  @default("") // คั่นด้วย comma เช่น {{requestId}}, {{requestNumber}}
+}
+
+// --- 📝 ระบบใบคำร้อง F07 (Core Transaction) ---
+model ITRequestF07 {
+  id              Int      @id @default(autoincrement())
+  workOrderNo     String?  @unique
+  thaiName        String   
+  phone           String?   
+  problemDetail   String
+  systemType      String   
+  isMoneyRelated  Boolean  @default(false)
+  attachmentPath  String?  
+  
+  // Status Management
+  status          String?  @default("PENDING") // Legacy string status (Deprecated)
+  currentStatusId Int      @default(1) // Default to initial status (needs seed)
+  currentStatus   Status   @relation(fields: [currentStatusId], references: [id])
+  
+  currentApprovalStep Int   @default(1) // Legacy step (Deprecated)
+  approvalToken   String?  @unique             
+  
+  // New Fields
+  reasonText      String?
+  problemReason   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  requester       User     @relation("Requester", fields: [requesterId], references: [id])
+  requesterId     Int
+  department      Department @relation(fields: [departmentId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  departmentId    Int
+  location        Location @relation(fields: [locationId], references: [id])
+  locationId      Int
+  category        Category @relation(fields: [categoryId], references: [id])
+  categoryId      Int
+  
+  auditLogs       AuditLog[]
+  correctionTypes RequestCorrectionType[]
+  approvalHistory ApprovalHistory[] // Relation to history
+  notifications   Notification[]
+}
+
+model RequestCorrectionType {
+  requestId        Int
+  correctionTypeId Int
+  
+  request          ITRequestF07   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  correctionType   CorrectionType @relation(fields: [correctionTypeId], references: [id], onDelete: Cascade)
+  
+  @@id([requestId, correctionTypeId])
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  timestamp   DateTime @default(now())
+  action      String   
+  userId      Int?
+  user        User?    @relation(fields: [userId], references: [id])
+  ipAddress   String?
+  detail      String?
+  requestId   Int?
+  request     ITRequestF07? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+}
+
+model ApprovalHistory { 
+  id              Int      @id @default(autoincrement())
+  requestId       Int
+  approverId      Int
+  approvalLevel   Decimal  @default(0) // StepSequence
+  actionType      String   // Approve, Reject
+  comment         String?
+  approvalTimestamp DateTime @default(now())
+  
+  request         ITRequestF07 @relation(fields: [requestId], references: [id], onDelete: Cascade) 
+  approver        User         @relation(fields: [approverId], references: [id])
+}
+
+
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId Int?
+  request   ITRequestF07? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>ออฟไลน์ - Request Online</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom, #f0f4f8, #e2e8f0);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 600px;
+      width: 100%;
+    }
+
+    .icon {
+      margin-bottom: 20px;
+    }
+
+    .icon svg {
+      width: 80px;
+      height: 80px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      color: #3b82f6;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #64748b;
+      margin-bottom: 24px;
+    }
+
+    /* Game Container */
+    .game-wrapper {
+      background: #fff;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 0 8px;
+    }
+
+    .score-display {
+      font-family: 'Courier New', monospace;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #1e3a5f;
+    }
+
+    .high-score {
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    #gameCanvas {
+      display: block;
+      background: linear-gradient(to bottom, #e8f4fc 70%, #a3d9a5 70%, #8bc34a 100%);
+      border-radius: 12px;
+      border: 2px solid #e2e8f0;
+      cursor: pointer;
+      max-width: 100%;
+    }
+
+    .game-instructions {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-top: 12px;
+    }
+
+    .game-over-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255, 255, 255, 0.95);
+      padding: 24px 32px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      display: none;
+    }
+
+    .game-over-overlay.show {
+      display: block;
+    }
+
+    .game-over-overlay h2 {
+      color: #ef4444;
+      margin-bottom: 8px;
+    }
+
+    .game-over-overlay p {
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #3b82f6;
+      border: 2px solid #bfdbfe;
+      margin-left: 8px;
+    }
+
+    .btn-secondary:hover {
+      background: #eff6ff;
+      border-color: #3b82f6;
+    }
+
+    .buttons {
+      margin-top: 20px;
+    }
+
+    .start-message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #3b82f6;
+      font-size: 1.2rem;
+      font-weight: 600;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .game-container {
+      position: relative;
+      display: inline-block;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <!-- Offline Icon -->
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
+        <path
+          d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" />
+      </svg>
+    </div>
+
+    <h1>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</h1>
+    <p class="subtitle">ลองเล่นเกมรอสักครู่ในขณะที่รอการเชื่อมต่อ</p>
+
+    <!-- Game -->
+    <div class="game-wrapper">
+      <div class="game-header">
+        <div class="score-display">SCORE: <span id="score">00000</span></div>
+        <div class="high-score">HI: <span id="highScore">00000</span></div>
+      </div>
+
+      <div class="game-container">
+        <canvas id="gameCanvas" width="560" height="200"></canvas>
+        <div class="start-message" id="startMessage">
+          กด Space หรือแตะเพื่อเริ่มเกม
+        </div>
+      </div>
+
+      <p class="game-instructions">กดปุ่ม Space หรือแตะหน้าจอเพื่อกระโดด 🦘</p>
+    </div>
+
+    <div class="buttons">
+      <button class="btn btn-primary" onclick="location.reload()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+        ลองเชื่อมต่ออีกครั้ง
+      </button>
+      <button class="btn btn-secondary" onclick="window.history.back()">
+        กลับ
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const highScoreEl = document.getElementById('highScore');
+    const startMessageEl = document.getElementById('startMessage');
+
+    // Game state
+    let gameStarted = false;
+    let gameOver = false;
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem('robotGameHighScore') || '0');
+    let gameSpeed = 5;
+    let animationId;
+
+    // Update high score display
+    highScoreEl.textContent = String(highScore).padStart(5, '0');
+
+    // Robot (Player)
+    const robot = {
+      x: 50,
+      y: 150,
+      width: 40,
+      height: 50,
+      velocityY: 0,
+      jumping: false,
+      gravity: 0.6,
+      jumpForce: -12,
+      groundY: 150
+    };
+
+    // Obstacles
+    let obstacles = [];
+    let obstacleTimer = 0;
+    let obstacleInterval = 100;
+
+    // Clouds (decoration)
+    let clouds = [
+      { x: 100, y: 30, size: 30 },
+      { x: 300, y: 50, size: 25 },
+      { x: 480, y: 35, size: 28 }
+    ];
+
+    function drawRobot() {
+      const x = robot.x;
+      const y = robot.y;
+
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.1)';
+      ctx.beginPath();
+      ctx.ellipse(x + 20, y + 52, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Antenna pole
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 20, y - 5);
+      ctx.lineTo(x + 20, y - 18);
+      ctx.stroke();
+
+      // Antenna ball
+      ctx.fillStyle = '#3B82F6';
+      ctx.beginPath();
+      ctx.arc(x + 20, y - 20, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Antenna glow
+      ctx.fillStyle = '#60A5FA';
+      ctx.beginPath();
+      ctx.arc(x + 20, y - 20, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Orange ear panels (left)
+      ctx.fillStyle = '#FF8C00';
+      ctx.fillRect(x - 2, y - 2, 6, 18);
+      ctx.strokeStyle = '#E07700';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 2, y - 2, 6, 18);
+
+      // Orange ear panels (right)
+      ctx.fillStyle = '#FF8C00';
+      ctx.fillRect(x + 36, y - 2, 6, 18);
+      ctx.strokeStyle = '#E07700';
+      ctx.strokeRect(x + 36, y - 2, 6, 18);
+
+      // Head (rounded rectangle)
+      ctx.fillStyle = '#4FC3F7';
+      ctx.strokeStyle = '#0288D1';
+      ctx.lineWidth = 2;
+      roundRect(ctx, x + 2, y - 8, 36, 28, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Face visor
+      ctx.fillStyle = '#E1F5FE';
+      roundRect(ctx, x + 6, y - 2, 28, 18, 4);
+      ctx.fill();
+
+      // Eyes
+      ctx.fillStyle = '#01579B';
+      ctx.beginPath();
+      ctx.arc(x + 14, y + 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + 26, y + 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eye shine
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(x + 13, y + 5, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + 25, y + 5, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Mouth
+      ctx.strokeStyle = '#01579B';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (robot.jumping) {
+        ctx.arc(x + 20, y + 12, 4, 0, Math.PI);
+      } else {
+        ctx.moveTo(x + 14, y + 13);
+        ctx.lineTo(x + 26, y + 13);
+      }
+      ctx.stroke();
+
+      // Body
+      ctx.fillStyle = '#4FC3F7';
+      ctx.strokeStyle = '#0288D1';
+      ctx.lineWidth = 2;
+      roundRect(ctx, x + 5, y + 22, 30, 28, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Chest panel
+      ctx.fillStyle = '#FF8C00';
+      roundRect(ctx, x + 12, y + 28, 16, 10, 3);
+      ctx.fill();
+      ctx.strokeStyle = '#E07700';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Chest light
+      ctx.fillStyle = '#FFE082';
+      ctx.beginPath();
+      ctx.arc(x + 20, y + 33, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Arms
+      ctx.fillStyle = '#4FC3F7';
+      ctx.strokeStyle = '#0288D1';
+      ctx.lineWidth = 2;
+
+      // Left arm
+      roundRect(ctx, x - 4, y + 25, 8, 18, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      // Right arm
+      roundRect(ctx, x + 36, y + 25, 8, 18, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      // Feet
+      ctx.fillStyle = '#01579B';
+      roundRect(ctx, x + 8, y + 48, 10, 6, 2);
+      ctx.fill();
+      roundRect(ctx, x + 22, y + 48, 10, 6, 2);
+      ctx.fill();
+    }
+
+    // Helper function for rounded rectangles
+    function roundRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    function drawObstacle(obs) {
+      // Box obstacle
+      ctx.fillStyle = '#8B4513';
+      ctx.strokeStyle = '#5D2E0C';
+      ctx.lineWidth = 2;
+
+      // Main box
+      ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+      ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+
+      // Box details
+      ctx.strokeStyle = '#A0522D';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(obs.x + obs.width / 2, obs.y);
+      ctx.lineTo(obs.x + obs.width / 2, obs.y + obs.height);
+      ctx.moveTo(obs.x, obs.y + obs.height / 2);
+      ctx.lineTo(obs.x + obs.width, obs.y + obs.height / 2);
+      ctx.stroke();
+    }
+
+    function drawClouds() {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      clouds.forEach(cloud => {
+        ctx.beginPath();
+        ctx.arc(cloud.x, cloud.y, cloud.size * 0.5, 0, Math.PI * 2);
+        ctx.arc(cloud.x + cloud.size * 0.4, cloud.y - cloud.size * 0.2, cloud.size * 0.4, 0, Math.PI * 2);
+        ctx.arc(cloud.x + cloud.size * 0.8, cloud.y, cloud.size * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawGround() {
+      // Ground line
+      ctx.fillStyle = '#8bc34a';
+      ctx.fillRect(0, 170, canvas.width, 30);
+
+      // Grass details
+      ctx.strokeStyle = '#689f38';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < canvas.width; i += 15) {
+        ctx.beginPath();
+        ctx.moveTo(i, 170);
+        ctx.lineTo(i + 5, 165);
+        ctx.stroke();
+      }
+    }
+
+    function spawnObstacle() {
+      const height = 25 + Math.random() * 15;
+      obstacles.push({
+        x: canvas.width,
+        y: 170 - height,
+        width: 25 + Math.random() * 15,
+        height: height
+      });
+    }
+
+    function checkCollision(robot, obs) {
+      const padding = 8; // Forgiving collision
+      return robot.x + padding < obs.x + obs.width &&
+        robot.x + robot.width - padding > obs.x &&
+        robot.y + padding < obs.y + obs.height &&
+        robot.y + robot.height - padding > obs.y;
+    }
+
+    function update() {
+      if (!gameStarted || gameOver) return;
+
+      // Update robot
+      robot.velocityY += robot.gravity;
+      robot.y += robot.velocityY;
+
+      if (robot.y >= robot.groundY) {
+        robot.y = robot.groundY;
+        robot.velocityY = 0;
+        robot.jumping = false;
+      }
+
+      // Update obstacles
+      obstacleTimer++;
+      if (obstacleTimer >= obstacleInterval) {
+        spawnObstacle();
+        obstacleTimer = 0;
+        // Decrease interval as score increases (harder)
+        obstacleInterval = Math.max(50, 100 - Math.floor(score / 500) * 10);
+      }
+
+      obstacles.forEach((obs, index) => {
+        obs.x -= gameSpeed;
+
+        // Remove off-screen obstacles
+        if (obs.x + obs.width < 0) {
+          obstacles.splice(index, 1);
+        }
+
+        // Check collision
+        if (checkCollision(robot, obs)) {
+          endGame();
+        }
+      });
+
+      // Update clouds
+      clouds.forEach(cloud => {
+        cloud.x -= gameSpeed * 0.3;
+        if (cloud.x + cloud.size < 0) {
+          cloud.x = canvas.width + cloud.size;
+          cloud.y = 25 + Math.random() * 40;
+        }
+      });
+
+      // Update score
+      score++;
+      scoreEl.textContent = String(score).padStart(5, '0');
+
+      // Increase speed gradually
+      if (score % 500 === 0) {
+        gameSpeed += 0.5;
+      }
+    }
+
+    function draw() {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw background gradient (sky)
+      const gradient = ctx.createLinearGradient(0, 0, 0, 170);
+      gradient.addColorStop(0, '#e8f4fc');
+      gradient.addColorStop(1, '#c8e6f5');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, 170);
+
+      drawClouds();
+      drawGround();
+
+      obstacles.forEach(obs => drawObstacle(obs));
+      drawRobot();
+
+      // Game over overlay
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', canvas.width / 2, 80);
+
+        ctx.font = '16px sans-serif';
+        ctx.fillText('คะแนน: ' + score, canvas.width / 2, 110);
+        ctx.fillText('กด Space หรือแตะเพื่อเล่นอีกครั้ง', canvas.width / 2, 140);
+      }
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function jump() {
+      if (!gameStarted) {
+        startGame();
+        return;
+      }
+
+      if (gameOver) {
+        resetGame();
+        return;
+      }
+
+      if (!robot.jumping) {
+        robot.velocityY = robot.jumpForce;
+        robot.jumping = true;
+      }
+    }
+
+    function startGame() {
+      gameStarted = true;
+      startMessageEl.style.display = 'none';
+      gameLoop();
+    }
+
+    function endGame() {
+      gameOver = true;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('robotGameHighScore', highScore);
+        highScoreEl.textContent = String(highScore).padStart(5, '0');
+      }
+    }
+
+    function resetGame() {
+      gameOver = false;
+      score = 0;
+      gameSpeed = 5;
+      obstacles = [];
+      obstacleTimer = 0;
+      obstacleInterval = 100;
+      robot.y = robot.groundY;
+      robot.velocityY = 0;
+      robot.jumping = false;
+      scoreEl.textContent = '00000';
+    }
+
+    // Event listeners
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        jump();
+      }
+    });
+
+    canvas.addEventListener('click', jump);
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      jump();
+    });
+
+    // Initial draw
+    draw();
+
+    // Check online status
+    window.addEventListener('online', () => {
+      location.reload();
+    });
+  </script>
+</body>
+
+</html>
