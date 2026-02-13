@@ -183,6 +183,21 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleToggleActive = async (user: User) => {
+    try {
+      const res = await fetch(`/api/admin/users/${user.UserID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !user.IsActive }),
+      });
+      if (!res.ok) throw new Error('อัปเดตสถานะล้มเหลว');
+      showNotification(`เปลี่ยนสถานะผู้ใช้ "${user.Username}" เรียบร้อย`, 'success');
+      fetchList();
+    } catch (e) {
+      showNotification('เกิดข้อผิดพลาดในการเปลี่ยนสถานะ', 'error');
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!toDelete) return;
     try {
@@ -282,6 +297,13 @@ export default function AdminUsersPage() {
                       className="text-blue-600 hover:underline text-sm"
                     >
                       แก้ไข
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(u)}
+                      className={`${u.IsActive ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'} text-sm font-bold`}
+                    >
+                      {u.IsActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
                     </button>
                     <button
                       type="button"

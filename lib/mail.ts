@@ -57,7 +57,7 @@ const sendViaSMTP = async (emailData: EmailData): Promise<boolean> => {
       html: emailData.body,
     });
 
-    console.log(`📧 ส่งอีเมลสำเร็จผ่าน SMTP ไปยัง: ${emailData.to.join(', ')} (ID: ${info.messageId})`);
+    // Log removed for production security
     return true;
   } catch (error) {
     console.error('❌ ส่งอีเมลผ่าน SMTP ล้มเหลว:', error);
@@ -97,7 +97,7 @@ const sendViaAPI = async (emailData: EmailData): Promise<boolean> => {
     // API might return 200 even if some logic failed, but we assume 200-299 is success
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 
-    console.log(`📧 ส่งอีเมลสำเร็จผ่าน API (${apiUrl}) ไปยัง: ${emailData.to.join(', ')}`);
+    // Log removed for production security
     return true;
   } catch (error) {
     console.error('❌ ส่งอีเมลผ่าน API ล้มเหลว:', error);

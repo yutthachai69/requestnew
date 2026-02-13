@@ -181,7 +181,7 @@ export async function POST(
 
       // 4. Parallel Check
       const parallelCheck = await checkParallelApprovalsCompleted(id, currentStatusId, transition.stepSequence, tx);
-      console.log('Parallel Check:', parallelCheck);
+      // Log removed
 
       if (!parallelCheck.allApproved) {
         // ยังไม่ครบคน -> บันทึก Audit ว่าอนุมัติแล้ว แต่ยังไม่เปลี่ยนสถานะ

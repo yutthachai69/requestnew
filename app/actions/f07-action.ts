@@ -111,7 +111,7 @@ export async function submitF07(formData: FormData) {
             })
         })
 
-        console.log(`✅ บันทึกสำเร็จ: ${newRequest.workOrderNo}`)
+        // Log removed)
 
         // 🔥 4. ระบบส่งเมลหาผู้อนุมัติ: ใช้ WorkflowTransitions ก่อน; ไม่มีถึงใช้ WorkflowStep/หัวหน้าแผนก
         let approver = await getFirstApproverForCategoryFromTransitions(categoryId, departmentId)
@@ -133,7 +133,7 @@ export async function submitF07(formData: FormData) {
                 senderName: thaiName, // ชื่อผู้แจ้งจากฟอร์ม
                 replyTo: session?.user?.email || undefined, // อีเมลผู้แจ้งสำหรับ Reply-To
             });
-            console.log(`📧 ส่งเมลหาผู้อนุมัติ: ${approver.fullName} เรียบร้อย`);
+            // Log removed
         } else {
             console.warn('⚠️ ไม่พบอีเมลผู้อนุมัติ (Workflow/หัวหน้าแผนก) ระบบข้ามการส่งเมลอัตโนมัติ');
         }
