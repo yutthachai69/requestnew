@@ -114,7 +114,7 @@ export default function LoginPage() {
       {/* Right Panel - Login Form */}
       <div className="flex flex-1 flex-col justify-center px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24 bg-white relative z-20 w-full lg:w-1/2">
         <div className="mx-auto w-full max-w-sm lg:w-96">
-          <div className="text-center lg:text-left mb-12">
+          <div className="text-center mb-12">
             <h2 className="text-4xl font-extrabold tracking-tight text-gray-900">เข้าสู่ระบบ</h2>
             <p className="mt-3 text-base text-gray-500">ยินดีต้อนรับ กลับสู่ระบบอีกครั้ง</p>
           </div>

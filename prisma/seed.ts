@@ -22,7 +22,7 @@ async function main() {
     { roleName: 'Final Approver', description: 'ผู้อนุมัติขั้นสุดท้าย' },
     { roleName: 'IT', description: 'เจ้าหน้าที่ IT' },
     { roleName: 'IT Reviewer', description: 'ผู้ตรวจรับงาน IT' },
-    { roleName: 'Manager', description: 'ผู้จัดการ' },
+
     { roleName: 'Warehouse', description: 'คลังสินค้า' },
   ];
 
@@ -126,6 +126,7 @@ async function main() {
     { code: 'WAITING_IT_CLOSE', displayName: 'รอ IT ปิดงาน', colorCode: '#06B6D4', displayOrder: 6, isInitialState: false },
     { code: 'CLOSED', displayName: 'ปิดงานเรียบร้อย', colorCode: '#10B981', displayOrder: 7, isInitialState: false },
     { code: 'REJECTED', displayName: 'ถูกปฏิเสธ', colorCode: '#EF4444', displayOrder: 8, isInitialState: false },
+    { code: 'REVISION', displayName: 'ส่งกลับแก้ไข', colorCode: '#F97316', displayOrder: 9, isInitialState: false },
   ];
 
   for (const s of statuses) {
@@ -168,9 +169,10 @@ async function main() {
   // "ทั่วไป" -> General
 
   const categories = [
-    { name: 'ฝ่ายไร่/ศูนย์ขนถ่าย', requiresCCSClosing: true }, // Default 6 steps
-    { name: 'ห้องชั่งอ้อย', requiresCCSClosing: true },        // Default 6 steps
-    { name: 'คลังสินค้า', requiresCCSClosing: false },         // 5 steps (No CCS Closing)
+    { name: 'เก็บเกี่ยวและขนส่ง', requiresCCSClosing: true }, // Renamed from ฝ่ายไร่/ศูนย์ขนถ่าย
+    { name: 'ธุรการวัตถุดิบ', requiresCCSClosing: true },     // New Split
+    { name: 'ห้องชั่งอ้อย', requiresCCSClosing: true },
+    { name: 'คลังสินค้า', requiresCCSClosing: false },
     { name: 'ทั่วไป', requiresCCSClosing: true },
   ];
 
@@ -238,7 +240,7 @@ async function main() {
           currentStatusId: sid(t.status),
           actionId: 2, // REJECT
           requiredRoleId: t.role,
-          nextStatusId: sid('REJECTED'),
+          nextStatusId: sid('REVISION'),
           stepSequence: 0,
           filterByDepartment: t.status === 'PENDING', // Head restricted to dept
         }

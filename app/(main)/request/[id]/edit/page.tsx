@@ -33,6 +33,8 @@ export default function RequestEditPage() {
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [initialProblemDetail, setInitialProblemDetail] = useState('');
+
   useEffect(() => {
     if (!id) {
       setLoading(false);
@@ -46,7 +48,10 @@ export default function RequestEditPage() {
       })
       .then((data) => {
         setRequest(data.request);
-        setProblemDetail(data.request?.problemDetail ?? '');
+        const detail = data.request?.problemDetail ?? '';
+        setProblemDetail(detail);
+        setInitialProblemDetail(detail); // Keep track of initial value
+
         // Parse existing attachments
         if (data.request?.attachmentPath) {
           try {
@@ -63,6 +68,15 @@ export default function RequestEditPage() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Check if there are any changes
+  const hasChanges =
+    problemDetail.trim() !== initialProblemDetail.trim() ||
+    newFiles.length > 0 ||
+    filesToDelete.length > 0;
+
+  const isRevision = request?.status === 'REVISION';
+  const canSubmit = !isRevision || hasChanges;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -95,10 +109,17 @@ export default function RequestEditPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!request || request.status !== 'PENDING') {
-      showNotification('แก้ไขได้เฉพาะคำร้องที่รอดำเนินการ', 'warning');
+    if (!request || !['PENDING', 'REVISION'].includes(request.status)) {
+      showNotification('แก้ไขได้เฉพาะคำร้องที่รอดำเนินการหรือถูกส่งกลับแก้ไข', 'warning');
       return;
     }
+
+    // Prevent submit if no changes on Revision
+    if (request.status === 'REVISION' && !hasChanges) {
+      showNotification('กรุณาแก้ไขข้อมูลหรือแนบไฟล์เพิ่มเติมก่อนส่งคำร้องใหม่', 'warning');
+      return;
+    }
+
     setSaving(true);
     try {
       const formData = new FormData();
@@ -161,7 +182,7 @@ export default function RequestEditPage() {
       </div>
     );
   }
-  if (request.status !== 'PENDING') {
+  if (!['PENDING', 'REVISION'].includes(request.status)) {
     return (
       <div className="w-full p-6">
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4">
@@ -175,7 +196,9 @@ export default function RequestEditPage() {
   return (
     <div className="w-full p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">แก้ไขคำร้อง #{request.workOrderNo ?? id}</h1>
+        <h1 className="text-xl font-bold text-gray-900">
+          {request.status === 'REVISION' ? 'แก้ไขและส่งคำร้องใหม่' : 'แก้ไขคำร้อง'} #{request.workOrderNo ?? id}
+        </h1>
         <Link href={`/request/${id}`} className="text-blue-600 hover:underline text-sm">← กลับไปรายละเอียด</Link>
       </div>
 
@@ -286,10 +309,16 @@ export default function RequestEditPage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            disabled={saving || (request.status === 'REVISION' && !hasChanges)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={request.status === 'REVISION' && !hasChanges ? 'กรุณาแก้ไขข้อมูลก่อนส่ง' : ''}
           >
-            {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+            {saving
+              ? 'กำลังส่งข้อมูล...'
+              : request.status === 'REVISION'
+                ? 'ยืนยันการส่งคำร้อง'
+                : 'บันทึกการแก้ไข'
+            }
           </button>
           <Link
             href={`/request/${id}`}

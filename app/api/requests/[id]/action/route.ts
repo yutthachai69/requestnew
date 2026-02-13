@@ -7,6 +7,7 @@ import { findPossibleTransitions, getNextApproversForStatus, getApproverForStep,
 import { generateRequestNumber } from '@/lib/document-number';
 import { sendApprovalEmail } from '@/lib/mail';
 import { getApprovalTemplate, getRevisionEmail, getCompletionEmail } from '@/lib/email-helper';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 import crypto from 'crypto';
 
 const ALLOWED_ACTIONS = ['APPROVE', 'REJECT', 'IT_PROCESS', 'CONFIRM_COMPLETE'] as const;
@@ -28,6 +29,16 @@ export async function POST(
   const userId = (session.user as { id?: string }).id;
   const roleName = (session.user as { roleName?: string }).roleName;
   const userName = session.user.name ?? '';
+
+  // Rate limit: 30 actions/นาที/user
+  const rlKey = getRateLimitKey(userId ?? 'anon', '/api/requests/action');
+  const rl = checkRateLimit(rlKey, { maxRequests: 30, windowSec: 60 });
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { message: 'ดำเนินการบ่อยเกินไป กรุณารอสักครู่' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
+  }
 
   try {
     const body = await request.json();
@@ -65,8 +76,8 @@ export async function POST(
 
     const currentStatusId = req.currentStatusId ?? 1;
     const statusCode = req.currentStatus?.code ?? req.status ?? 'PENDING';
-    if (statusCode === 'CLOSED' || statusCode === 'REJECTED') {
-      return NextResponse.json({ message: 'คำร้องนี้ดำเนินการไปแล้ว' }, { status: 400 });
+    if (statusCode === 'CLOSED') {
+      return NextResponse.json({ message: 'คำร้องนี้ปิดงานเรียบร้อยแล้ว' }, { status: 400 });
     }
 
     const correctionTypeIds =
@@ -78,19 +89,12 @@ export async function POST(
       currentStatusId,
       correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
     });
-    // Debug: Log transition candidates
-    console.log(`[DEBUG] Finding transitions for Category: ${req.categoryId}, Status: ${currentStatusId}, Type: ${correctionTypeIds}`);
-    console.log(`[DEBUG] Transitions found: ${transitions.length}`);
-    transitions.forEach(t => {
-      console.log(`[DEBUG] Candidate: ${t.action.actionName} - ReqRole: ${t.requiredRole.roleName} - Next: ${t.nextStatus.code}`);
-    });
 
     // เลือก transition ที่ตรง action และ user มีสิทธิ์ (รองรับหลาย role ต่อ action เช่น IT หรือ Admin ปิดงาน)
     const transition = transitions.find(
       (t) => {
         const allowedRoles = getUserRoleNamesForWorkflowRole(t.requiredRole.roleName);
         const hasRole = allowedRoles.includes(roleName ?? '');
-        console.log(`[DEBUG] Check Role: User=${roleName} vs Required=${t.requiredRole.roleName} (Expanded: ${allowedRoles}) -> Match? ${hasRole}`);
         return t.action.actionName === actionName && hasRole;
       }
     );
@@ -100,16 +104,12 @@ export async function POST(
       // it means the action is invalid for this user in this state (State Machine enforcing).
       // We should NOT fallback to legacy, because legacy ignores the State Machine.
       if (transitions.length > 0) {
-        console.log(`[DEBUG] Transitions exist (${transitions.length}) but no match for User=${roleName}, Action=${actionName}. Blocking legacy fallback.`);
         return NextResponse.json(
           { message: `คุณไม่มีสิทธิ์ดำเนินการ "${actionName}" ในสถานะนี้ (ตรวจสอบสิทธิ์หรือสถานะ)` },
           { status: 403 }
         );
       }
 
-      console.log('[DEBUG] No transitions defined for this status. STRICT MODE: Blocking Legacy Fallback.');
-      // const legacyResult = await performLegacyApproval(req, id, actionName, comment, userId, userName, roleName ?? undefined);
-      // if (legacyResult) return legacyResult;
 
       return NextResponse.json(
         { message: `ไม่พบขั้นตอนถัดไปสำหรับสถานะนี้ (No Transition Found)` },
@@ -132,12 +132,12 @@ export async function POST(
 
       const requestData = { requestId: id, requestNumber: workOrderNo ?? undefined };
 
-      // 2. REJECT Logic
+      // 2. REJECT Logic → ส่งกลับแก้ไข (REVISION)
       if (actionName === 'REJECT') {
         await tx.iTRequestF07.update({
           where: { id },
           data: {
-            status: 'REJECTED',
+            status: nextCode,  // REVISION (from workflow transition)
             currentStatusId: nextStatusId,
             approvalToken: null,
             updatedAt: new Date(),
@@ -147,7 +147,7 @@ export async function POST(
           data: {
             action: 'REJECT',
             userId: userId ? Number(userId) : null,
-            detail: `Request #${workOrderNo} REJECT by ${userName}${comment ? `: ${comment}` : ''}`,
+            detail: `Request #${workOrderNo} ส่งกลับแก้ไข by ${userName}${comment ? `: ${comment}` : ''}`,
             requestId: id,
           },
         });
@@ -162,7 +162,7 @@ export async function POST(
             },
           });
         }
-        return { type: 'REJECT', nextStatusId, requestData };
+        return { type: 'REJECT', nextStatusId, nextCode, requestData };
       }
 
       // 3. APPROVE Logic (Log History first)
@@ -227,7 +227,7 @@ export async function POST(
       if (req.requester?.email) {
         try {
           const { createNotification } = await import('@/lib/notification');
-          await createNotification(req.requesterId, `คำร้องของคุณ (#${req.workOrderNo}) ถูกปฏิเสธ/ส่งกลับแก้ไข`, req.id);
+          await createNotification(req.requesterId, `คำร้องของคุณ (#${req.workOrderNo}) ถูกส่งกลับแก้ไข กรุณาตรวจสอบและแก้ไขคำร้อง`, req.id);
           const { subject, body } = getRevisionEmail(result.requestData!, { fullName: req.requester.fullName });
           await sendApprovalEmail({ to: [req.requester.email], subject, body });
         } catch (err) {
@@ -235,8 +235,8 @@ export async function POST(
         }
       }
       return NextResponse.json({
-        message: 'ปฏิเสธ/ส่งกลับเรียบร้อย',
-        request: { id: req.id, status: 'REJECTED', currentStatusId: nextStatusId },
+        message: 'ส่งกลับแก้ไขเรียบร้อย',
+        request: { id: req.id, status: result.nextCode, currentStatusId: result.nextStatusId },
       });
     }
 
@@ -314,162 +314,4 @@ export async function POST(
     console.error('POST /api/requests/[id]/action', e);
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
-}
-
-/** Fallback: อนุมัติแบบ step เดิม (เมื่อหมวดไม่มี WorkflowTransitions) */
-async function performLegacyApproval(
-  req: { id: number; workOrderNo: string | null; thaiName: string; problemDetail: string; categoryId: number; departmentId: number | null; currentApprovalStep?: number; requester?: { email: string; fullName: string } | null },
-  id: number,
-  actionName: string,
-  comment: string,
-  userId: string | undefined,
-  userName: string,
-  roleName: string | undefined
-): Promise<NextResponse | null> {
-  if (actionName !== 'APPROVE' && actionName !== 'REJECT') return null;
-
-  const currentStep = (req as { currentApprovalStep?: number }).currentApprovalStep ?? 1;
-  const stepConfig = await prisma.workflowStep.findFirst({
-    where: { categoryId: req.categoryId, stepSequence: currentStep },
-    select: { approverRoleName: true },
-  });
-  const canAct =
-    (stepConfig?.approverRoleName && getUserRoleNamesForWorkflowRole(stepConfig.approverRoleName).includes(roleName ?? '')) ||
-    (!stepConfig && ['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก', 'User'].includes(roleName ?? ''));
-  if (!canAct) return null;
-
-  if (actionName === 'REJECT') {
-    await prisma.$transaction([
-      prisma.iTRequestF07.update({
-        where: { id },
-        data: { status: 'REJECTED', approvalToken: null, updatedAt: new Date() },
-      }),
-      prisma.auditLog.create({
-        data: {
-          action: 'REJECT',
-          userId: userId ? Number(userId) : null,
-          detail: `Request #${req.workOrderNo} REJECT by ${userName}${comment ? `: ${comment}` : ''}`,
-          requestId: id,
-        },
-      }),
-    ]);
-    const withRequester = await prisma.iTRequestF07.findUnique({
-      where: { id },
-      include: { requester: true },
-    });
-    if (withRequester?.requester?.email) {
-      try {
-        const { getRevisionEmail } = await import('@/lib/email-helper');
-        const { sendApprovalEmail } = await import('@/lib/mail');
-        const { createNotification } = await import('@/lib/notification');
-
-        // ✅ Notification for Requester (REJECT - Legacy)
-        await createNotification(withRequester.requester.id, `คำร้องของคุณ (#${withRequester.workOrderNo}) ถูกปฏิเสธ/ส่งกลับแก้ไข`, id);
-
-        const requestData = { requestId: id, requestNumber: withRequester.workOrderNo ?? undefined };
-        const { subject, body } = getRevisionEmail(requestData, { fullName: withRequester.requester.fullName });
-        await sendApprovalEmail({ to: [withRequester.requester.email], subject, body });
-      } catch (err) {
-        console.error('ส่งเมลแจ้งผู้ยื่น (revision) ล้มเหลว:', err);
-      }
-    }
-    return NextResponse.json({
-      message: 'ปฏิเสธ/ส่งกลับเรียบร้อย',
-      request: { id: req.id, status: 'REJECTED' },
-    });
-  }
-
-  const totalSteps = await getWorkflowStepCount(req.categoryId);
-  const isLastStep = totalSteps <= 0 || currentStep >= totalSteps;
-
-  if (isLastStep) {
-    await prisma.$transaction([
-      prisma.iTRequestF07.update({
-        where: { id },
-        data: { status: 'CLOSED', approvalToken: null, updatedAt: new Date() },
-      }),
-      prisma.auditLog.create({
-        data: {
-          action: 'APPROVE',
-          userId: userId ? Number(userId) : null,
-          detail: `Request #${req.workOrderNo} APPROVE by ${userName}${comment ? `: ${comment}` : ''}`,
-          requestId: id,
-        },
-      }),
-    ]);
-    const withRequester = await prisma.iTRequestF07.findUnique({
-      where: { id },
-      include: { requester: true },
-    });
-    if (withRequester?.requester?.email) {
-      try {
-        const { getCompletionEmail } = await import('@/lib/email-helper');
-        const { sendApprovalEmail } = await import('@/lib/mail');
-        const { createNotification } = await import('@/lib/notification');
-
-        // ✅ Notification for Requester (CLOSED - Legacy)
-        await createNotification(withRequester.requester.id, `คำร้องของคุณ (#${withRequester.workOrderNo}) ดำเนินการเสร็จสิ้นแล้ว`, id);
-
-        const requestData = { requestId: id, requestNumber: withRequester.workOrderNo ?? undefined };
-        const { subject, body } = getCompletionEmail(requestData, { fullName: withRequester.requester.fullName });
-        await sendApprovalEmail({ to: [withRequester.requester.email], subject, body });
-      } catch (err) {
-        console.error('ส่งเมลแจ้งผู้ยื่น (completion) ล้มเหลว:', err);
-      }
-    }
-    return NextResponse.json({
-      message: 'อนุมัติและปิดงานเรียบร้อย',
-      request: { id: req.id, status: 'CLOSED' },
-    });
-  }
-
-  const nextStep = currentStep + 1;
-  const newToken = crypto.randomUUID();
-  const nextApprover = await getApproverForStep(req.categoryId, nextStep, req.departmentId ?? undefined);
-
-  await prisma.$transaction([
-    prisma.iTRequestF07.update({
-      where: { id },
-      data: { currentApprovalStep: nextStep, approvalToken: newToken, updatedAt: new Date() },
-    }),
-    prisma.auditLog.create({
-      data: {
-        action: 'APPROVED',
-        userId: userId ? Number(userId) : null,
-        detail: `Request #${req.workOrderNo} APPROVE ขั้นที่ ${currentStep} by ${userName} → ส่งต่อขั้นที่ ${nextStep}${comment ? `: ${comment}` : ''}`,
-        requestId: id,
-      },
-    }),
-  ]);
-
-  if (nextApprover?.email) {
-    const { getApprovalTemplate } = await import('@/lib/email-helper');
-    const { sendApprovalEmail } = await import('@/lib/mail');
-
-    // ✅ Notification for Next Approver (Web UI - Legacy)
-    if (nextApprover.id) {
-      const { createNotification } = await import('@/lib/notification');
-      await createNotification(nextApprover.id, `มีใบงานรออนุมัติ: ${req.workOrderNo} (ขั้นที่ ${nextStep})`, req.id);
-    }
-
-    const templateRequest = {
-      id: req.id,
-      workOrderNo: req.workOrderNo,
-      thaiName: req.thaiName ?? '',
-      problemDetail: req.problemDetail ?? '',
-    };
-    const { subject, body: emailBody } = getApprovalTemplate(templateRequest, nextApprover.fullName);
-    await sendApprovalEmail({
-      to: [nextApprover.email],
-      subject: `[ขั้นที่ ${nextStep}] ${subject}`,
-      body: emailBody,
-      senderName: req.thaiName || undefined,
-      replyTo: req.requester?.email || undefined,
-    });
-  }
-
-  return NextResponse.json({
-    message: 'อนุมัติสำเร็จ ส่งต่อขั้นถัดไปแล้ว',
-    request: { id: req.id, status: 'PENDING', currentApprovalStep: nextStep },
-  });
 }

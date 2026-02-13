@@ -17,7 +17,6 @@ export const allowedDashboardRoles = [
   'Warehouse',
   'warehouse',
   'IT',
-  'Manager',
   'User',
   // ชื่อที่อาจใช้ใน Admin (บัญชี, FinalApp, IT operator/viewer, คลัง)
   'account',
@@ -35,10 +34,12 @@ export const allowedDashboardRoles = [
   'บัญชี',
   // Fix for 'Request' role found in DB
   'Request',
+  // หัวหน้าห้องชั่ง
+  'Head of Weighbridge',
 ];
 
-/** Role ที่เข้า /report ได้ — ตามสเปก: Admin, Head of Department เท่านั้น */
-export const reportRoles = ['Admin', 'Head of Department'];
+/** Role ที่เข้า /report ได้ — ทุก role ที่ login แล้ว (middleware จะตรวจ auth อยู่แล้ว) */
+export const reportRoles: string[] | null = null; // null = ทุก role เข้าได้
 
 /** Role ที่มีสิทธิ์อนุมัติ/ดำเนินการ — แสดงเมนู "รายการที่ต้องอนุมัติ/ดำเนินการ" (รวมชื่อภาษาไทยที่ใช้ในระบบ) */
 export const approverRoles = [
@@ -48,7 +49,6 @@ export const approverRoles = [
   'Final Approver',
   'IT Reviewer',
   'IT',
-  'Manager',
   'Warehouse',
   'warehouse',
   'account',
@@ -64,6 +64,8 @@ export const approverRoles = [
   'หน.แผนก',
   'หัวหน้าแผนก',
   'บัญชี',
+  // หัวหน้าห้องชั่ง
+  'Head of Weighbridge',
 ];
 
 /** Role ที่เป็นผู้ขอ (เห็นเฉพาะคำร้องของตัวเอง, แก้ไข/ลบได้เมื่อ PENDING) */
@@ -79,9 +81,10 @@ export const WORKFLOW_ROLE_TO_USER_ROLES: Record<string, string[]> = {
   'Final Approver': ['Final Approver', 'FinalApp'],
   'IT': ['IT', 'It operetor', 'It operator', 'IT Operator', 'It Operator'],
   'IT Reviewer': ['IT Reviewer', 'It viewer', 'IT Veiwer'],
-  'Head of Department': ['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก'],
-  'หน.แผนก': ['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก'],
-  'หัวหน้าแผนก': ['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก'],
+  'Head of Department': ['Head of Department', 'หน.แผนก', 'หัวหน้าแผนก', 'Head of Weighbridge'],
+  'หน.แผนก': ['Head of Department', 'หน.แผนก', 'หัวหน้าแผนก', 'Head of Weighbridge'],
+  'หัวหน้าแผนก': ['Head of Department', 'หน.แผนก', 'หัวหน้าแผนก', 'Head of Weighbridge'],
+  'Head of Weighbridge': ['Head of Department', 'หน.แผนก', 'หัวหน้าแผนก', 'Head of Weighbridge'],
   'Warehouse': ['Warehouse', 'warehouse'],
   'Admin': ['Admin'],
 };
@@ -129,7 +132,6 @@ export const ROLE_HIERARCHY: Record<string, number> = {
   'Final Approver': 75,
   FinalApp: 75,
   'Head of Department': 70,
-  Manager: 70,
   'Accountant': 65,
   account: 65,
   Warehouse: 60,
@@ -147,49 +149,46 @@ export type TabItem = {
 };
 
 /**
- * ดึงรายการแท็บ/เมนูตาม role ตามสเปก
- * - Admin: หน้าแรก, ภาพรวม, รายงาน, โปรไฟล์ (ไม่มีขั้นตอนอนุมัติ / ไม่มียื่นคำร้อง)
- * - Head of Department: หน้าแรก, ภาพรวม, รายงาน, รายการที่ต้องอนุมัติ, โปรไฟล์
- * - Requester/User: หน้าแรก, ยื่นคำร้อง, โปรไฟล์
- * - Accountant / Final Approver / IT ฯลฯ: หน้าแรก, ภาพรวม, รายการที่ต้องอนุมัติ, โปรไฟล์
+ * ดึงรายการแท็บ/เมนูตาม role
+ * - Admin: ภาพรวม, รายงาน, โปรไฟล์ + หมวด Administrator
+ * - Approver ทุกตัว (Head of Dept, IT, Accountant, Final): ภาพรวม, รายการที่ต้องอนุมัติ, รายงาน, โปรไฟล์
+ * - Requester/User: ภาพรวม, รายการที่รออนุมัติ, ยื่นคำร้อง, รายงาน, โปรไฟล์
  */
 export function getTabsForRole(roleName: string | null | undefined): TabItem[] {
   if (!roleName) return [];
 
-  const allTabs: TabItem[] = [
-    { label: 'หน้าแรก', path: '/welcome', statusFilter: null, isHistory: false, displayOrder: 0 },
+  // ── Admin ──
+  if (roleName === 'Admin') {
+    return [
+      { label: 'ภาพรวม', path: '/dashboard', statusFilter: null, isHistory: false, displayOrder: 1 },
+      { label: 'รายงาน', path: '/report', statusFilter: null, isHistory: false, displayOrder: 4 },
+      { label: 'โปรไฟล์', path: '/profile', statusFilter: null, isHistory: false, displayOrder: 5 },
+    ];
+  }
+
+  // ── Approver ทุก role (Head of Dept, IT, Accountant, Final etc.) ──
+  if (approverRoles.includes(roleName) || ['Head of Department', 'หน.แผนก', 'หัวหน้าแผนก'].includes(roleName)) {
+    return [
+      { label: 'ภาพรวม', path: '/dashboard', statusFilter: null, isHistory: false, displayOrder: 1 },
+      { label: 'รายการที่ต้องอนุมัติ/ดำเนินการ', path: '/pending-tasks', statusFilter: null, isHistory: false, displayOrder: 2 },
+      { label: 'รายงาน', path: '/report', statusFilter: null, isHistory: false, displayOrder: 4 },
+      { label: 'โปรไฟล์', path: '/profile', statusFilter: null, isHistory: false, displayOrder: 5 },
+    ];
+  }
+
+  // ── Requester / User ──
+  if (requesterRoles.includes(roleName)) {
+    return [
+      { label: 'ภาพรวม', path: '/dashboard', statusFilter: null, isHistory: false, displayOrder: 1 },
+      { label: 'ยื่นคำร้อง', path: '/request/new', statusFilter: null, isHistory: false, displayOrder: 3 },
+      { label: 'รายงาน', path: '/report', statusFilter: null, isHistory: false, displayOrder: 4 },
+      { label: 'โปรไฟล์', path: '/profile', statusFilter: null, isHistory: false, displayOrder: 5 },
+    ];
+  }
+
+  // ── Fallback: ทุก role อื่นๆ ──
+  return [
     { label: 'ภาพรวม', path: '/dashboard', statusFilter: null, isHistory: false, displayOrder: 1 },
-    { label: 'รายการที่ต้องอนุมัติ/ดำเนินการ', path: '/pending-tasks', statusFilter: null, isHistory: false, displayOrder: 2 },
-    { label: 'ยื่นคำร้อง', path: '/request/new', statusFilter: null, isHistory: false, displayOrder: 3 },
-    { label: 'รายงาน', path: '/report', statusFilter: null, isHistory: false, displayOrder: 4 },
     { label: 'โปรไฟล์', path: '/profile', statusFilter: null, isHistory: false, displayOrder: 5 },
   ];
-
-  const baseNoRoot = allTabs.filter((t) => t.path !== '/');
-
-  if (roleName === 'Admin') {
-    return baseNoRoot
-      .filter((t) => t.path !== '/pending-tasks' && t.path !== '/request/new')
-      .sort((a, b) => a.displayOrder - b.displayOrder);
-  }
-
-  if (['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก'].includes(roleName)) {
-    return baseNoRoot
-      .filter((t) => t.path !== '/request/new')
-      .sort((a, b) => a.displayOrder - b.displayOrder);
-  }
-
-  if (requesterRoles.includes(roleName)) {
-    return allTabs
-      .filter((t) => t.path === '/welcome' || t.path === '/request/new' || t.path === '/profile')
-      .sort((a, b) => a.displayOrder - b.displayOrder);
-  }
-
-  if (approverRoles.includes(roleName)) {
-    return baseNoRoot
-      .filter((t) => t.path !== '/report' && t.path !== '/request/new')
-      .sort((a, b) => a.displayOrder - b.displayOrder);
-  }
-
-  return allTabs.filter((t) => t.path === '/welcome' || t.path === '/profile').sort((a, b) => a.displayOrder - b.displayOrder);
 }

@@ -99,118 +99,214 @@ export default function AppSidebar() {
 
       {/* Navigation */}
       <nav className={`flex-1 overflow-y-auto ${isCollapsed ? 'px-2' : 'px-4'} py-6 space-y-6 scrollbar-hide`}>
-        {/* Main Menu Group */}
-        <div className="space-y-2">
-          {showText && (
-            <div className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Main Menu
-            </div>
-          )}
+        {/* Navigation Logic: Admin vs User */}
+        {roleName === 'Admin' ? (
+          <>
+            {/* --- Admin View: Separated Sections --- */}
 
-          <Tooltip text="หน้าแรก" show={isCollapsed}>
-            <Link
-              href="/dashboard"
-              onClick={closeMobile}
-              className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${pathname === '/dashboard' || pathname === '/'
-                ? 'bg-blue-50 text-blue-700 shadow-sm'
-                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-            >
-              <div className={`absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full transition-opacity duration-200 ${pathname === '/dashboard' || pathname === '/' ? 'opacity-100' : 'opacity-0'}`} />
-
-              <svg className={`w-5 h-5 transition-colors ${pathname === '/dashboard' || pathname === '/' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              {showText && <span>หน้าแรก</span>}
-            </Link>
-          </Tooltip>
-
-          {/* Categories Section */}
-          {categories.length > 0 && (
-            <div className="pt-1">
-              <Tooltip text="หมวดหมู่คำร้อง" show={isCollapsed}>
-                <button
-                  type="button"
-                  onClick={() => setCategoriesOpen((o) => !o)}
-                  className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between gap-2.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-colors group ${pathname?.startsWith('/category')
-                    ? 'bg-gray-50 text-gray-900'
-                    : 'text-gray-600 hover:bg-gray-50'
-                    }`}
-                >
-                  <div className={`flex items-center ${isCollapsed ? '' : 'gap-3.5'}`}>
-                    <svg className={`w-5 h-5 transition-colors ${pathname?.startsWith('/category') ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                    {showText && <span>หมวดหมู่คำร้อง</span>}
-                  </div>
-                  {showText && (
-                    <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${categoriesOpen ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  )}
-                </button>
-              </Tooltip>
-
-              {categoriesOpen && !isCollapsed && (
-                <div className="mt-2 space-y-1 pl-2">
-                  {categories.map((c) => {
-                    const isActive = pathname === `/category/${c.CategoryID}`;
-                    return (
-                      <Link
-                        key={c.CategoryID}
-                        href={`/category/${c.CategoryID}`}
-                        onClick={closeMobile}
-                        className={`block rounded-lg px-4 py-2.5 text-sm transition-all relative ${isActive
-                          ? 'text-primary-700 font-semibold bg-primary-50 ml-2'
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50 ml-2'
-                          }`}
-                      >
-                        {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary-500 rounded-r-full"></div>}
-                        {c.CategoryName}
-                      </Link>
-                    );
-                  })}
+            {/* Main Menu Group (Admin) */}
+            <div className="space-y-2">
+              {showText && (
+                <div className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  Main Menu
                 </div>
               )}
-            </div>
-          )}
-        </div>
 
-        {/* Dynamic Tabs based on Role */}
-        <div className="space-y-2">
-          {showText && (
-            <div className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Workplace
-            </div>
-          )}
-          {tabs.map((tab) => {
-            const isActive = pathname === tab.path || (tab.path !== '/welcome' && pathname?.startsWith(tab.path));
-            return (
-              <Tooltip key={tab.path} text={tab.label} show={isCollapsed}>
+              <Tooltip text="หน้าแรก" show={isCollapsed}>
                 <Link
-                  href={tab.path}
+                  href="/dashboard"
                   onClick={closeMobile}
-                  className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${isActive
+                  className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${pathname === '/dashboard' || pathname === '/'
                     ? 'bg-blue-50 text-blue-700 shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
                 >
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full transition-opacity duration-200 ${pathname === '/dashboard' || pathname === '/' ? 'opacity-100' : 'opacity-0'}`} />
 
-                  <svg className={`w-5 h-5 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  <svg className={`w-5 h-5 transition-colors ${pathname === '/dashboard' || pathname === '/' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
-                  {showText && <span>{tab.label}</span>}
+                  {showText && <span>หน้าแรก</span>}
                 </Link>
               </Tooltip>
-            );
-          })}
-        </div>
+
+              {/* Categories Section (Admin) */}
+              {categories.length > 0 && (
+                <div className="pt-1">
+                  <Tooltip text="หมวดหมู่คำร้อง" show={isCollapsed}>
+                    <button
+                      type="button"
+                      onClick={() => setCategoriesOpen((o) => !o)}
+                      className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between gap-2.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-colors group ${pathname?.startsWith('/category')
+                        ? 'bg-gray-50 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                    >
+                      <div className={`flex items-center ${isCollapsed ? '' : 'gap-3.5'}`}>
+                        <svg className={`w-5 h-5 transition-colors ${pathname?.startsWith('/category') ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        {showText && <span>หมวดหมู่คำร้อง</span>}
+                      </div>
+                      {showText && (
+                        <svg
+                          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${categoriesOpen ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      )}
+                    </button>
+                  </Tooltip>
+
+                  {categoriesOpen && !isCollapsed && (
+                    <div className="mt-2 space-y-1 pl-2">
+                      {categories.map((c) => {
+                        const isActive = pathname === `/category/${c.CategoryID}`;
+                        return (
+                          <Link
+                            key={c.CategoryID}
+                            href={`/category/${c.CategoryID}`}
+                            onClick={closeMobile}
+                            className={`block rounded-lg px-4 py-2.5 text-sm transition-all relative ${isActive
+                              ? 'text-primary-700 font-semibold bg-primary-50 ml-2'
+                              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50 ml-2'
+                              }`}
+                          >
+                            {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary-500 rounded-r-full"></div>}
+                            {c.CategoryName}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Workplace Group (Admin) */}
+            <div className="space-y-2">
+              {showText && (
+                <div className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  Workplace
+                </div>
+              )}
+              {tabs.map((tab) => {
+                const isActive = pathname === tab.path || (tab.path !== '/welcome' && pathname?.startsWith(tab.path));
+                return (
+                  <Tooltip key={tab.path} text={tab.label} show={isCollapsed}>
+                    <Link
+                      href={tab.path}
+                      onClick={closeMobile}
+                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${isActive
+                        ? 'bg-blue-50 text-blue-700 shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                    >
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+
+                      <svg className={`w-5 h-5 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      {showText && <span>{tab.label}</span>}
+                    </Link>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* --- User/Requester View: Unified Simple List --- */}
+            <div className="space-y-2">
+              {tabs.map((tab) => {
+                const isActive = pathname === tab.path || (tab.path !== '/welcome' && pathname?.startsWith(tab.path));
+                return (
+                  <Tooltip key={tab.path} text={tab.label} show={isCollapsed}>
+                    <Link
+                      href={tab.path}
+                      onClick={closeMobile}
+                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${isActive
+                        ? 'bg-blue-50 text-blue-700 shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                    >
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 bg-blue-600 rounded-r-full transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+
+                      <svg className={`w-5 h-5 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        {/* Icons mapping based on path */}
+                        {tab.path === '/dashboard' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />}
+                        {tab.path === '/pending-tasks' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />}
+                        {tab.path === '/request/new' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />}
+                        {tab.path === '/report' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />}
+                        {tab.path === '/profile' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />}
+                        {!['/dashboard', '/pending-tasks', '/request/new', '/report', '/profile'].includes(tab.path) && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
+                      </svg>
+                      {showText && <span>{tab.label}</span>}
+                    </Link>
+                  </Tooltip>
+                );
+              })}
+
+              {/* Categories Section (For User - Part of flow) */}
+              {categories.length > 0 && (
+                <div className="pt-1">
+                  <Tooltip text="หมวดหมู่คำร้อง" show={isCollapsed}>
+                    <button
+                      type="button"
+                      onClick={() => setCategoriesOpen((o) => !o)}
+                      className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between gap-2.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-colors group ${pathname?.startsWith('/category')
+                        ? 'bg-gray-50 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                    >
+                      <div className={`flex items-center ${isCollapsed ? '' : 'gap-3.5'}`}>
+                        <svg className={`w-5 h-5 transition-colors ${pathname?.startsWith('/category') ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        {showText && <span>หมวดหมู่คำร้อง</span>}
+                      </div>
+                      {showText && (
+                        <svg
+                          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${categoriesOpen ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      )}
+                    </button>
+                  </Tooltip>
+
+                  {categoriesOpen && !isCollapsed && (
+                    <div className="mt-2 space-y-1 pl-2">
+                      {categories.map((c) => {
+                        const isActive = pathname === `/category/${c.CategoryID}`;
+                        return (
+                          <Link
+                            key={c.CategoryID}
+                            href={`/category/${c.CategoryID}`}
+                            onClick={closeMobile}
+                            className={`block rounded-lg px-4 py-2.5 text-sm transition-all relative ${isActive
+                              ? 'text-primary-700 font-semibold bg-primary-50 ml-2'
+                              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50 ml-2'
+                              }`}
+                          >
+                            {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary-500 rounded-r-full"></div>}
+                            {c.CategoryName}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
 
         {/* Admin Section */}

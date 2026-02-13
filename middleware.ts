@@ -33,6 +33,12 @@ export async function middleware(request: NextRequest) {
     if (role !== 'Admin') return NextResponse.redirect(new URL('/', request.url));
   }
 
+  // /api/admin — defense-in-depth: ป้องกัน API route ที่ลืมตรวจ role
+  if (pathname.startsWith('/api/admin')) {
+    if (!token) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    if (role !== 'Admin') return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+  }
+
   // /login - ถ้า login แล้ว redirect ไป dashboard
   if (pathname === '/login') {
     const allowed = role && allowedDashboardRoles.includes(role);
@@ -54,7 +60,7 @@ export async function middleware(request: NextRequest) {
   // /report
   if (pathname.startsWith('/report')) {
     if (!token) return redirectToLogin();
-    if (!role || !reportRoles.includes(role)) {
+    if (reportRoles && (!role || !reportRoles.includes(role))) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }
@@ -69,6 +75,11 @@ export async function middleware(request: NextRequest) {
     if (!token) return redirectToLogin();
   }
 
+  // /notifications
+  if (pathname.startsWith('/notifications')) {
+    if (!token) return redirectToLogin();
+  }
+
   return NextResponse.next();
 }
 
@@ -76,11 +87,13 @@ export const config = {
   matcher: [
     '/dashboard/:path*',
     '/admin/:path*',
+    '/api/admin/:path*',
     '/login',
     '/profile/:path*',
     '/report/:path*',
     '/request/:path*',
     '/pending-tasks/:path*',
     '/category/:path*',
+    '/notifications/:path*',
   ],
 };

@@ -31,7 +31,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hot-toast": "^2.6.0",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "sweetalert2": "^11.26.18"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -140,11 +140,15 @@ export async function submitF07(formData: FormData) {
 
         revalidatePath('/dashboard')
 
+        return {
+            success: true,
+            message: 'บันทึกคำร้องสำเร็จ',
+            workOrderNo: newRequest.workOrderNo,
+            id: newRequest.id
+        }
+
     } catch (error) {
         console.error('❌ เกิดข้อผิดพลาด:', error)
         return { error: 'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง' }
     }
-
-    // 5. ส่งกลับไปหน้า dashboard เมื่อเสร็จ
-    redirect('/dashboard')
 }

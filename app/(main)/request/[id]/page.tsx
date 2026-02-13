@@ -123,11 +123,13 @@ export default function RequestDetailPage() {
       if (!res.ok) throw new Error(data.message ?? 'ดำเนินการไม่สำเร็จ');
       showNotification(data.message ?? 'ดำเนินการสำเร็จ', 'success');
       setActionDialog({ open: false, action: null, comment: '' });
-      if (request) setRequest({ ...request, status: data.request?.status ?? request.status });
-      // โหลดประวัติและผู้แก้ไข/วันที่แก้ไขใหม่หลังดำเนินการ
+
+      // ─── โหลดข้อมูลทั้งหมดใหม่หลังดำเนินการ ───
       const refetch = await fetch(`/api/requests/${id}`, { credentials: 'same-origin' });
       if (refetch.ok) {
         const refetchData = await refetch.json();
+        setRequest(refetchData.request);              // ✅ อัพเดต request + status + currentStatus
+        setPossibleActions(refetchData.possibleActions ?? []); // ✅ อัพเดตปุ่มที่กดได้
         setHistory(refetchData.history ?? []);
         setResolvedBy(refetchData.resolvedBy ?? null);
         setResolvedAt(refetchData.resolvedAt ?? null);
@@ -215,16 +217,29 @@ export default function RequestDetailPage() {
             </svg>
             ส่งออกเป็น PDF
           </Link>
-          {request.status === 'PENDING' && currentUserId != null && (request.requesterId === currentUserId || request.requester?.id === currentUserId) && (
+          {['PENDING', 'REVISION'].includes(request.status) && currentUserId != null && (request.requesterId === currentUserId || request.requester?.id === currentUserId) && (
             <Link
               href={`/request/${id}/edit`}
               className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600"
             >
-              แก้ไขคำร้อง
+              {request.status === 'REVISION' ? '✏️ แก้ไขและส่งกลับ' : 'แก้ไขคำร้อง'}
             </Link>
           )}
         </div>
       </div>
+
+      {/* Revision Banner */}
+      {request.status === 'REVISION' && currentUserId != null && (request.requesterId === currentUserId || request.requester?.id === currentUserId) && (
+        <div className="mx-auto max-w-4xl mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+          <svg className="w-6 h-6 text-orange-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <div>
+            <p className="font-semibold text-orange-800">คำร้องนี้ถูกส่งกลับแก้ไข</p>
+            <p className="text-sm text-orange-600 mt-1">กรุณาตรวจสอบหมายเหตุจากผู้อนุมัติด้านล่าง แก้ไขรายละเอียด แล้วกดปุ่ม &quot;แก้ไขและส่งกลับ&quot; เพื่อส่งเข้าระบบอนุมัติใหม่</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 min-w-0">

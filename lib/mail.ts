@@ -46,7 +46,7 @@ const sendViaSMTP = async (emailData: EmailData): Promise<boolean> => {
       port,
       secure: port === 465,
       auth: { user, pass },
-      tls: { ciphers: 'SSLv3', rejectUnauthorized: false },
+      tls: { minVersion: 'TLSv1.2' }, // ใช้ TLS ที่ปลอดภัย
     });
 
     const info = await transporter.sendMail({

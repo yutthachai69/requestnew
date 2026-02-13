@@ -20,12 +20,12 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const username = credentials?.username != null ? String(credentials.username).trim() : '';
-        const password = credentials?.password != null ? String(credentials.password).trim() : '';
+        const username = credentials?.username ? String(credentials.username).trim() : '';
+        const password = credentials?.password ? String(credentials.password).trim() : '';
         if (!username || !password) return null;
         const user = await prisma.user.findUnique({
           where: { username, isActive: true },
-          include: { role: true },
+          include: { role: true, department: true },
         });
         if (!user) return null;
         const hashed = hashPassword(password);
@@ -35,6 +35,8 @@ export const authOptions: NextAuthOptions = {
           name: user.fullName,
           email: user.email,
           roleName: user.role.roleName,
+          department: user.department?.name ?? null,
+          position: user.position ?? null,
         };
       },
     }),
@@ -42,21 +44,27 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.roleName = (user as { roleName?: string }).roleName;
+        const u = user as { roleName?: string; department?: string | null; position?: string | null };
+        token.roleName = u.roleName;
         token.id = user.id;
+        token.department = u.department;
+        token.position = u.position;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { roleName?: string }).roleName = token.roleName;
-        (session.user as { id?: string }).id = token.id;
+        const su = session.user as { roleName?: string; id?: string; department?: string | null; position?: string | null };
+        su.roleName = token.roleName as string | undefined;
+        su.id = token.id as string | undefined;
+        su.department = (token.department as string | null) ?? null;
+        su.position = (token.position as string | null) ?? null;
       }
       return session;
     },
   },
   pages: { signIn: '/login' },
-  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
+  session: { strategy: 'jwt', maxAge: 8 * 60 * 60 }, // 8 ชั่วโมง (1 วันทำงาน)
 };
 
 export { allowedDashboardRoles } from './auth-constants';

@@ -91,7 +91,7 @@ export async function checkParallelApprovalsCompleted(
     where: {
       requestId,
       approvalLevel: currentStepSequence, // Prisma Decimal mapped to number/string based on config, assume compatibility or cast
-      actionType: { in: ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS'] } // ปรับตาม Action Name ที่บันทึกจริง
+      actionType: { in: ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'] } // ปรับตาม Action Name ที่บันทึกจริง
     },
     select: { approverId: true },
     distinct: ['approverId']
@@ -230,7 +230,7 @@ export async function getDeptManagerEmail(departmentId: number) {
       departmentId: departmentId,
       role: {
         roleName: {
-          in: ['Manager', 'Head of Department', 'Approver'],
+          in: ['Head of Department', 'Approver'],
         },
       },
       isActive: true,

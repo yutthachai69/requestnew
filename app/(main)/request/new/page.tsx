@@ -250,15 +250,27 @@ export default function NewRequestPage() {
       formData.set('correctionTypeIds', JSON.stringify(selectedTypeIds));
       for (const file of selectedFiles) formData.append('attachments', file);
       const result = await submitF07(formData);
-      if (result && typeof result === 'object' && 'error' in result) {
+
+      if (result && 'error' in result) {
         setSubmitError((result as { error: string }).error);
         setSubmitting(false);
+      } else if (result && 'success' in result && result.success) {
+        // Success!
+        const Swal = (await import('sweetalert2')).default;
+        await Swal.fire({
+          title: 'บันทึกสำเร็จ!',
+          text: `เลขที่ใบคำร้อง: ${(result as any).workOrderNo}`,
+          icon: 'success',
+          confirmButtonText: 'ตกลง',
+          confirmButtonColor: '#2563eb', // blue-600
+        });
+        router.push('/dashboard');
       }
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
       setSubmitting(false);
     }
-  }, [userMe, locationId, categoryId, reason, systemType, systemTypeOther, problemDetailBuilt, selectedTypeIds, selectedFiles, requestDepartmentId]);
+  }, [userMe, locationId, categoryId, reason, systemType, systemTypeOther, problemDetailBuilt, selectedTypeIds, selectedFiles, requestDepartmentId, router]);
 
   if (!userMe && categories.length === 0) {
     return (

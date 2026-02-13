@@ -83,11 +83,34 @@ export async function GET(
     const currentStatusId = request.currentStatusId ?? 1;
     const currentStep = (request as { currentApprovalStep?: number }).currentApprovalStep ?? 1;
     const correctionTypeIds = (request as { correctionTypes?: { correctionTypeId: number }[] }).correctionTypes?.map((r) => r.correctionTypeId) ?? [];
-    const transitions = await findPossibleTransitions({
+    let transitions = await findPossibleTransitions({
       categoryId: request.categoryId,
       currentStatusId,
       correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
     });
+
+    // ✅ Filter transitions: Remove if user already APPROVED this step (Parallel Check)
+    if (userId) {
+      const userHistory = await prisma.approvalHistory.findMany({
+        where: {
+          requestId: id,
+          approverId: Number(userId),
+          actionType: { in: ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'] }
+        },
+        select: { approvalLevel: true }
+      });
+      const approvedSteps = new Set(userHistory.map(h => Number(h.approvalLevel)));
+
+      transitions = transitions.filter(t => {
+        // Always allow REJECT? Or maybe not if already approved? 
+        // Usually we hide everything if done.
+        if (approvedSteps.has(t.stepSequence) && t.action.actionName !== 'REJECT') {
+          return false;
+        }
+        return true;
+      });
+    }
+
     let possibleActions = getPossibleActionsFromTransitions(transitions, roleName ?? undefined);
     if (possibleActions.length === 0 && request.status === 'PENDING') {
       possibleActions = await getPossibleActionsFromStep(currentStep, request.categoryId, roleName ?? undefined);
@@ -150,8 +173,8 @@ export async function PUT(
     if (existing.requesterId !== Number(userId)) {
       return NextResponse.json({ message: 'แก้ไขได้เฉพาะคำร้องของตัวเอง' }, { status: 403 });
     }
-    if (existing.status !== 'PENDING') {
-      return NextResponse.json({ message: 'แก้ไขได้เฉพาะคำร้องที่รอดำเนินการ' }, { status: 400 });
+    if (!['PENDING', 'REVISION'].includes(existing.status ?? '')) {
+      return NextResponse.json({ message: 'แก้ไขได้เฉพาะคำร้องที่รอดำเนินการหรือถูกส่งกลับแก้ไข' }, { status: 400 });
     }
 
     // Handle both FormData (with files) and JSON
@@ -214,16 +237,66 @@ export async function PUT(
     const allAttachments = [...existingFiles, ...newFilePaths];
     const attachmentPath = allAttachments.length > 0 ? JSON.stringify(allAttachments) : null;
 
-    const data: { problemDetail?: string; attachmentPath?: string | null; updatedAt: Date } = {
+    const data: { problemDetail?: string; attachmentPath?: string | null; updatedAt: Date; status?: string; currentStatusId?: number; approvalToken?: string } = {
       updatedAt: new Date(),
       attachmentPath,
     };
     if (problemDetail !== undefined) data.problemDetail = problemDetail;
 
+    // If the request is in REVISION status, resubmit it back to PENDING
+    if (existing.status === 'REVISION') {
+      const pendingStatus = await prisma.status.findUnique({ where: { code: 'PENDING' } });
+      if (pendingStatus) {
+        data.status = 'PENDING';
+        data.currentStatusId = pendingStatus.id;
+        data.approvalToken = (await import('crypto')).default.randomUUID();
+      }
+    }
+
     const updated = await prisma.iTRequestF07.update({
       where: { id },
       data,
     });
+
+    // If resubmitted (was REVISION → now PENDING), create audit log and notify
+    if (existing.status === 'REVISION') {
+      // ✅ RESET APPROVAL HISTORY: Clear old approvals so users can approve again
+      await prisma.approvalHistory.deleteMany({ where: { requestId: id } });
+
+      await prisma.auditLog.create({
+        data: {
+          action: 'RESUBMIT',
+          userId: Number(userId),
+          detail: `Request #${existing.workOrderNo} แก้ไขและส่งกลับเข้าระบบใหม่`,
+          requestId: id,
+        },
+      });
+
+      // Notify next approvers (Head of Department)
+      try {
+        const { getNextApproversForStatus } = await import('@/lib/workflow');
+        const { createNotification } = await import('@/lib/notification');
+        const pendingStatus = await prisma.status.findUnique({ where: { code: 'PENDING' } });
+        if (pendingStatus) {
+          const nextApprovers = await getNextApproversForStatus(
+            existing.categoryId,
+            pendingStatus.id,
+            existing.departmentId ?? undefined,
+            null
+          );
+          for (const approver of nextApprovers) {
+            if (approver.id) {
+              await createNotification(approver.id, `มีใบงานแก้ไขแล้วรอพิจารณาใหม่: ${existing.workOrderNo}`, id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Notify approvers after resubmit failed:', err);
+      }
+
+      return NextResponse.json({ message: 'แก้ไขและส่งกลับเข้าระบบเรียบร้อย เริ่มพิจารณาใหม่', request: updated });
+    }
+
     return NextResponse.json({ message: 'อัปเดตคำร้องสำเร็จ', request: updated });
   } catch (e) {
     console.error('PUT /api/requests/[id]', e);

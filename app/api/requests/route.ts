@@ -76,18 +76,98 @@ export async function GET(request: NextRequest) {
         (where.createdAt as { lte?: Date }).lte = d;
       }
     }
+    // Search filter — เก็บไว้ก่อน จะรวมกับ transition filter ทีหลัง
+    let searchFilter: Record<string, unknown>[] | null = null;
     if (searchQuery) {
-      where.OR = [
+      searchFilter = [
         { workOrderNo: { contains: searchQuery } },
         { thaiName: { contains: searchQuery } },
         { problemDetail: { contains: searchQuery } },
       ];
     }
-    // Admin และ role ที่เป็นผู้อนุมัติ (Head of Department, IT, Manager ฯลฯ) เห็นคำร้องทั้งหมดในภาพรวม เพื่อให้กดเข้าไปอนุมัติได้
-    // เฉพาะ Requester/User ที่เห็นเฉพาะคำร้องของตัวเอง
-    const canSeeAllRequests = roleName === 'Admin' || (roleName && approverRoles.includes(roleName));
-    if (!canSeeAllRequests && userId) {
+    // ─── Role-based visibility ───
+    // Admin: เห็นทุกคำร้อง
+    // Approver: เห็นเฉพาะคำร้องที่ตรงกับ WorkflowTransition ของ role ตัวเอง + แผนกตัวเอง
+    // Requester: เห็นเฉพาะคำร้องที่ตัวเองสร้าง
+    if (roleName === 'Admin') {
+      // Admin เห็นทั้งหมด — ใส่แค่ search filter ถ้ามี
+      if (searchFilter) where.OR = searchFilter;
+    } else if (roleName && approverRoles.includes(roleName)) {
+      // ─── กรองตาม WorkflowTransition ───
+      const { getCanonicalRoleNamesForApprover } = await import('@/lib/auth-constants');
+      const canonicalNames = getCanonicalRoleNamesForApprover(roleName);
+      const matchingRoles = await prisma.role.findMany({
+        where: { roleName: { in: canonicalNames } },
+        select: { id: true },
+      });
+      const myRoleIds = matchingRoles.map((r) => r.id);
+
+      // หา currentUser department
+      const currentUser = await prisma.user.findUnique({
+        where: { id: Number(userId!) },
+        select: { departmentId: true },
+      });
+
+      if (myRoleIds.length > 0) {
+        // หา transitions ที่ user มีสิทธิ์
+        const myTransitions = await prisma.workflowTransition.findMany({
+          where: { requiredRoleId: { in: myRoleIds } },
+          select: { categoryId: true, currentStatusId: true, filterByDepartment: true },
+        });
+        const hasDeptFilter = myTransitions.some((t) => t.filterByDepartment);
+
+        if (status === 'PENDING' && myTransitions.length > 0) {
+          // ─── tab รอดำเนินการ: ใช้ transition matching เข้มงวด ───
+          const orConditions: Record<string, unknown>[] = [];
+          for (const t of myTransitions) {
+            const condition: Record<string, unknown> = {
+              categoryId: t.categoryId,
+              currentStatusId: t.currentStatusId,
+            };
+            if (t.filterByDepartment && currentUser?.departmentId) {
+              condition.departmentId = currentUser.departmentId;
+            }
+            orConditions.push(condition);
+          }
+          const andConditions: Record<string, unknown>[] = [{ OR: orConditions }];
+          if (searchFilter) andConditions.push({ OR: searchFilter });
+          where.AND = andConditions;
+        } else if (status === 'APPROVED' || status === 'REJECTED') {
+          // ─── tab อนุมัติแล้ว/ดำเนินการแล้ว / ปฏิเสธ: ดึงจาก AuditLog ที่ user คนนี้เคยทำ ───
+          // APPROVED tab: รวม APPROVE + IT_PROCESS + CONFIRM_COMPLETE (สำหรับ IT roles)
+          const auditActions = status === 'APPROVED'
+            ? ['APPROVE', 'IT_PROCESS', 'CONFIRM_COMPLETE']
+            : ['REJECT'];
+          const auditLogs = await prisma.auditLog.findMany({
+            where: { userId: Number(userId!), action: { in: auditActions }, requestId: { not: null } },
+            select: { requestId: true },
+            distinct: ['requestId'],
+          });
+          const actedIds = auditLogs.map((a) => a.requestId!).filter(Boolean);
+          if (actedIds.length > 0) {
+            where.id = { in: actedIds };
+            // ลบ status filter เดิมออก เพราะคำร้องอาจไปอยู่สถานะอื่นแล้ว (เช่น รอบัญชี)
+            delete where.status;
+          } else {
+            // ไม่เคยทำ action นี้เลย → ไม่มีรายการ
+            where.id = { in: [] };
+          }
+          if (searchFilter) where.OR = searchFilter;
+        } else {
+          // ─── tab ปิดงาน / ทั้งหมด: กรองแค่แผนก ───
+          if (hasDeptFilter && currentUser?.departmentId) {
+            where.departmentId = currentUser.departmentId;
+          }
+          if (searchFilter) where.OR = searchFilter;
+        }
+      } else {
+        where.requesterId = Number(userId);
+        if (searchFilter) where.OR = searchFilter;
+      }
+    } else if (userId) {
+      // Requester: เห็นเฉพาะของตัวเอง
       where.requesterId = Number(userId);
+      if (searchFilter) where.OR = searchFilter;
     }
 
     const [requests, total] = await Promise.all([
@@ -125,7 +205,7 @@ export async function GET(request: NextRequest) {
         const stepLabel = r.status === 'PENDING' ? stepLabelByKey.get(`${r.categoryId}-${currentStep}`) ?? null : null;
         const statusDisplay =
           (r as { currentStatus?: { displayName: string } }).currentStatus?.displayName ??
-          getStatusDisplay(r.status, currentStep, stepLabel);
+          getStatusDisplay(r.status ?? '', currentStep, stepLabel);
         return {
           id: r.id,
           RequestID: r.id,

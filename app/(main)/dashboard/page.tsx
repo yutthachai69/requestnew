@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import StatCards from '@/app/components/StatCards';
@@ -29,7 +30,7 @@ type RequestRow = {
   createdAt: string;
 };
 
-const TABS = [
+const ALL_TABS: { label: string; status: string }[] = [
   { label: 'รอดำเนินการ', status: 'PENDING' },
   { label: 'อนุมัติแล้ว', status: 'APPROVED' },
   { label: 'ปฏิเสธ', status: 'REJECTED' },
@@ -40,10 +41,36 @@ const TABS = [
 export default function DashboardPage() {
   const { data: session } = useSession();
   const { showNotification } = useNotification();
+  const searchParams = useSearchParams();
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
-  const [tabIndex, setTabIndex] = useState(0);
+
+  const roleName = session?.user ? (session.user as { roleName?: string }).roleName : undefined;
+
+  // ปรับ tabs ตาม role
+  const TABS = useMemo(() => {
+    if (roleName === 'IT Reviewer') {
+      // IT Reviewer ไม่ได้อนุมัติ → ซ่อน tab อนุมัติแล้ว
+      return ALL_TABS.filter((t) => t.status !== 'APPROVED');
+    }
+    if (roleName === 'IT') {
+      // IT (Operator) ไม่ได้อนุมัติ แต่ดำเนินการ → เปลี่ยนชื่อ tab
+      return ALL_TABS.map((t) =>
+        t.status === 'APPROVED' ? { ...t, label: 'ดำเนินการแล้ว' } : t
+      );
+    }
+    return ALL_TABS;
+  }, [roleName]);
+
+  // ถ้ามี ?status=APPROVED จะเลือก tab อัตโนมัติ
+  const initialTab = (() => {
+    const s = searchParams.get('status');
+    if (s === null) return 0; // ไม่มี param → default tab แรก
+    const idx = TABS.findIndex((t) => t.status === s);
+    return idx >= 0 ? idx : 0;
+  })();
+  const [tabIndex, setTabIndex] = useState(initialTab);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -54,12 +81,13 @@ export default function DashboardPage() {
     action: 'APPROVE',
     comment: '',
   });
+  const [bulkStep, setBulkStep] = useState<1 | 2>(1);
   const [submitting, setSubmitting] = useState(false);
   const [counts, setCounts] = useState({ PENDING: 0, APPROVED: 0, REJECTED: 0, CLOSED: 0 });
   const [categoryStats, setCategoryStats] = useState<{ categoryId: number; categoryName: string; count: number }[]>([]);
 
-  const roleName = session?.user ? (session.user as { roleName?: string }).roleName : undefined;
-  const allowBulk = roleName === 'Admin' || roleName === 'Head of Department';
+  const [allowBulk, setAllowBulk] = useState(false);
+
   const currentTab = TABS[tabIndex];
   const isPendingTab = currentTab?.status === 'PENDING';
 
@@ -92,6 +120,15 @@ export default function DashboardPage() {
     fetchRequests();
   }, [fetchRequests]);
 
+  // ─── ตรวจสอบสิทธิ์ Bulk Actions จาก DB ───
+  useEffect(() => {
+    if (!session?.user) return;
+    fetch('/api/user/bulk-permission', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : { allowed: false }))
+      .then((data) => setAllowBulk(data.allowed === true))
+      .catch(() => setAllowBulk(false));
+  }, [session]);
+
   useEffect(() => {
     if (!session?.user) return;
     setLoadingStats(true);
@@ -99,13 +136,11 @@ export default function DashboardPage() {
       .then((r) => (r.ok ? r.json() : Promise.resolve({ byStatus: [], requestCountByCategory: [] })))
       .then((data) => {
         const byStatus = data.byStatus ?? [];
-        const closedStatuses = ['CLOSED', 'REJECTED'];
-        const pendingSum = byStatus
-          .filter((s: { status: string | null }) => s.status != null && !closedStatuses.includes(s.status))
-          .reduce((sum: number, s: { count: number }) => sum + (s.count ?? 0), 0);
+        // Use the explicit pending count from API which has the correct logic
+        const pendingCount = data.pendingRequestCount ?? 0;
 
         setCounts({
-          PENDING: pendingSum,
+          PENDING: pendingCount,
           APPROVED: byStatus.find((s: any) => s.status === 'APPROVED')?.count ?? 0,
           REJECTED: byStatus.find((s: any) => s.status === 'REJECTED')?.count ?? 0,
           CLOSED: byStatus.find((s: any) => s.status === 'CLOSED')?.count ?? 0,
@@ -267,14 +302,14 @@ export default function DashboardPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setBulkDialog({ open: true, action: 'APPROVE', comment: '' })}
+                onClick={() => { setBulkStep(1); setBulkDialog({ open: true, action: 'APPROVE', comment: '' }); }}
                 className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
               >
                 อนุมัติ
               </button>
               <button
                 type="button"
-                onClick={() => setBulkDialog({ open: true, action: 'REJECT', comment: '' })}
+                onClick={() => { setBulkStep(1); setBulkDialog({ open: true, action: 'REJECT', comment: '' }); }}
                 className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
               >
                 ส่งกลับ/ปฏิเสธ
@@ -448,12 +483,75 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {bulkDialog.open && (
+      {/* ─── Bulk Action: Step 1 — ตรวจสอบรายละเอียด ─── */}
+      {bulkDialog.open && bulkStep === 1 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold mb-2">ยืนยันการดำเนินการ</h3>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">ตรวจสอบก่อนดำเนินการ</h3>
+                <p className="text-sm text-gray-500">{selected.length} รายการที่เลือก</p>
+              </div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+              <p className="text-amber-800 font-medium">
+                ท่านได้ตรวจสอบรายละเอียดคำร้องทั้ง {selected.length} รายการแล้วหรือไม่?
+              </p>
+              <p className="text-amber-600 text-sm mt-1">
+                กรุณาตรวจสอบให้แน่ใจก่อนดำเนินการ{bulkDialog.action === 'APPROVE' ? 'อนุมัติ' : 'ปฏิเสธ'}แบบกลุ่ม
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkDialog({ open: false, action: 'APPROVE', comment: '' })}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkStep(2)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              >
+                ตรวจสอบแล้ว ดำเนินการต่อ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Bulk Action: Step 2 — ยืนยันการดำเนินการ ─── */}
+      {bulkDialog.open && bulkStep === 2 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${bulkDialog.action === 'APPROVE' ? 'bg-green-100' : 'bg-red-100'
+                }`}>
+                {bulkDialog.action === 'APPROVE' ? (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">
+                  ยืนยันการ{bulkDialog.action === 'APPROVE' ? 'อนุมัติ' : 'ปฏิเสธ'}
+                </h3>
+                <p className="text-sm text-gray-500">{selected.length} รายการ</p>
+              </div>
+            </div>
             <p className="text-gray-600 mb-4">
-              คุณต้องการ{bulkDialog.action === 'APPROVE' ? 'อนุมัติ' : 'ปฏิเสธ'} {selected.length} รายการใช่หรือไม่?
+              คุณต้องการ <strong>{bulkDialog.action === 'APPROVE' ? 'อนุมัติ' : 'ปฏิเสธ'}</strong> คำร้องทั้ง {selected.length} รายการใช่หรือไม่?
             </p>
             {bulkDialog.action === 'REJECT' && (
               <div className="mb-4">
@@ -461,7 +559,7 @@ export default function DashboardPage() {
                 <textarea
                   value={bulkDialog.comment}
                   onChange={(e) => setBulkDialog((d) => ({ ...d, comment: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
                   rows={3}
                   placeholder="กรุณาระบุเหตุผล"
                 />
@@ -470,8 +568,8 @@ export default function DashboardPage() {
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setBulkDialog({ open: false, action: 'APPROVE', comment: '' })}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                onClick={() => { setBulkStep(1); setBulkDialog({ open: false, action: 'APPROVE', comment: '' }); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
               >
                 ยกเลิก
               </button>
@@ -479,9 +577,12 @@ export default function DashboardPage() {
                 type="button"
                 onClick={handleBulkSubmit}
                 disabled={submitting || (bulkDialog.action === 'REJECT' && !bulkDialog.comment.trim())}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className={`px-4 py-2 text-white rounded-lg font-medium disabled:opacity-50 ${bulkDialog.action === 'APPROVE'
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : 'bg-red-600 hover:bg-red-700'
+                  }`}
               >
-                {submitting ? 'กำลังดำเนินการ...' : 'ยืนยัน'}
+                {submitting ? 'กำลังดำเนินการ...' : bulkDialog.action === 'APPROVE' ? '✓ อนุมัติ' : '✗ ปฏิเสธ'}
               </button>
             </div>
           </div>

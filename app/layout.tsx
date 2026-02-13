@@ -14,6 +14,11 @@ const notoSansThai = Noto_Sans_Thai({
 export const metadata: Metadata = {
   title: "REQUESTONLINE - ระบบคำร้องออนไลน์",
   description: "ลดภาระการเดินเอกสาร ด้วยการยื่นคำร้องและอนุมัติออนไลน์",
+  icons: {
+    icon: "/TSM.png",
+    shortcut: "/TSM.png",
+    apple: "/TSM.png",
+  },
 };
 
 export default function RootLayout({

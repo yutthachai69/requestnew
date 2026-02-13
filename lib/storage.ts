@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 
 // โฟลเดอร์เก็บไฟล์แยกจาก public เพื่อความปลอดภัย
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
@@ -8,6 +8,25 @@ const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 // ไฟล์ที่อนุญาต
 const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// Magic bytes สำหรับตรวจสอบเนื้อหาไฟล์จริง
+const MAGIC_BYTES: Record<string, number[][]> = {
+    '.png': [[0x89, 0x50, 0x4E, 0x47]],                         // \x89PNG
+    '.jpg': [[0xFF, 0xD8, 0xFF]],                                // JPEG SOI
+    '.jpeg': [[0xFF, 0xD8, 0xFF]],                                // JPEG SOI
+    '.pdf': [[0x25, 0x50, 0x44, 0x46]],                          // %PDF
+};
+
+/**
+ * ตรวจ magic bytes ว่าเนื้อหาไฟล์ตรงกับ extension หรือไม่
+ */
+function validateMagicBytes(buffer: Buffer, ext: string): boolean {
+    const signatures = MAGIC_BYTES[ext];
+    if (!signatures) return true; // ไม่มีข้อมูล → ไม่บล็อก
+    return signatures.some(sig =>
+        sig.every((byte, i) => buffer.length > i && buffer[i] === byte)
+    );
+}
 
 /**
  * Ensures the upload directory exists
@@ -52,7 +71,13 @@ export async function saveFile(file: File): Promise<string> {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext = path.extname(file.name).toLowerCase();
-    const filename = `${uuidv4()}${ext}`;
+
+    // ตรวจ magic bytes — ป้องกันการเปลี่ยนนามสกุลไฟล์อันตราย
+    if (!validateMagicBytes(buffer, ext)) {
+        throw new Error(`ไฟล์ไม่ตรงกับประเภทที่ระบุ (${ext}) — อาจเป็นไฟล์ปลอม`);
+    }
+
+    const filename = `${crypto.randomUUID()}${ext}`;
     const filepath = path.join(UPLOAD_DIR, filename);
 
     await fs.promises.writeFile(filepath, buffer);

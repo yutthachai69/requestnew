@@ -18,7 +18,7 @@ export async function GET() {
   if (err) return err;
   try {
     const list = await prisma.user.findMany({
-      orderBy: { username: 'asc' },
+      orderBy: { id: 'asc' },
       include: { role: true, department: true, accessibleCategories: { select: { id: true } } },
     });
     return NextResponse.json(
