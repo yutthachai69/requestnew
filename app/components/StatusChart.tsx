@@ -1,5 +1,6 @@
 // components/StatusChart.tsx
 'use client'
+import { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 /** สี status ตามชื่อ (ภาษาไทย) */
@@ -29,6 +30,10 @@ function getColor(name: string): string {
 }
 
 export default function StatusChart({ data }: { data: { name: string; value: number }[] }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <div className="h-[300px] w-full" />;
+
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>

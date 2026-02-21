@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     let mappings: { categoryId: number; stepSequence: number; user: { id: number; fullName: string; email: string } }[] = [];
     try {
       if (categoryIds.length) {
-        mappings = await (prisma as { specialApproverMapping?: { findMany: (args: { where: { categoryId: { in: number[] } }; include: { user: { select: { id: true; fullName: true; email: true } } } }) => Promise<typeof mappings> } })
+        mappings = await (prisma as unknown as { specialApproverMapping?: { findMany: (args: { where: { categoryId: { in: number[] } }; include: { user: { select: { id: true; fullName: true; email: true } } } }) => Promise<typeof mappings> } })
           .specialApproverMapping?.findMany({
             where: { categoryId: { in: categoryIds } },
             include: { user: { select: { id: true, fullName: true, email: true } } },

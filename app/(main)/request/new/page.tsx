@@ -364,9 +364,13 @@ export default function NewRequestPage() {
               onChange={(e) => setReason(e.target.value)}
               required
               rows={3}
+              maxLength={200}
               placeholder="กรุณากรอกเหตุผลในการแก้ไขให้ชัดเจน"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
+            <p className={`text-xs mt-1 text-right ${reason.length > 160 ? 'text-red-500' : 'text-gray-400'}`}>
+              {reason.length}/200
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ระบบที่ขอแก้ไข *</label>
@@ -381,13 +385,19 @@ export default function NewRequestPage() {
               </label>
             </div>
             {systemType === 'อื่นๆ' && (
-              <input
-                type="text"
-                value={systemTypeOther}
-                onChange={(e) => setSystemTypeOther(e.target.value)}
-                placeholder="ระบุระบบ"
-                className="mt-2 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <>
+                <input
+                  type="text"
+                  value={systemTypeOther}
+                  onChange={(e) => setSystemTypeOther(e.target.value)}
+                  placeholder="ระบุระบบ"
+                  maxLength={100}
+                  className="mt-2 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <p className={`text-xs mt-1 text-right ${systemTypeOther.length > 80 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {systemTypeOther.length}/100
+                </p>
+              </>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-4">
@@ -466,21 +476,35 @@ export default function NewRequestPage() {
                               {fc.label} {fc.required && '*'}
                             </label>
                             {fc.type === 'textarea' ? (
-                              <textarea
-                                value={values[`val${fIndex + 1}`] ?? ''}
-                                onChange={(e) => handleDynamicFieldChange(typeId, fIndex, e.target.value)}
-                                required={fc.required}
-                                rows={3}
-                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              />
+                              <>
+                                <textarea
+                                  value={values[`val${fIndex + 1}`] ?? ''}
+                                  onChange={(e) => handleDynamicFieldChange(typeId, fIndex, e.target.value)}
+                                  required={fc.required}
+                                  rows={3}
+                                  maxLength={300}
+                                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                />
+                                <p className={`text-xs mt-1 text-right ${(values[`val${fIndex + 1}`]?.length ?? 0) > 270 ? 'text-red-500' : 'text-gray-400'
+                                  }`}>
+                                  {values[`val${fIndex + 1}`]?.length ?? 0}/300
+                                </p>
+                              </>
                             ) : (
-                              <input
-                                type="text"
-                                value={values[`val${fIndex + 1}`] ?? ''}
-                                onChange={(e) => handleDynamicFieldChange(typeId, fIndex, e.target.value)}
-                                required={fc.required}
-                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              />
+                              <>
+                                <input
+                                  type="text"
+                                  value={values[`val${fIndex + 1}`] ?? ''}
+                                  onChange={(e) => handleDynamicFieldChange(typeId, fIndex, e.target.value)}
+                                  required={fc.required}
+                                  maxLength={30}
+                                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                />
+                                <p className={`text-xs mt-1 text-right ${(values[`val${fIndex + 1}`]?.length ?? 0) > 24 ? 'text-red-500' : 'text-gray-400'
+                                  }`}>
+                                  {values[`val${fIndex + 1}`]?.length ?? 0}/30
+                                </p>
+                              </>
                             )}
                           </div>
                         ))}
@@ -593,10 +617,10 @@ export default function NewRequestPage() {
             <div className="rounded-lg border border-gray-200 p-4 bg-gray-50/50">
               <h3 className="font-medium text-gray-900 mb-2">1. ข้อมูลทั่วไป</h3>
               <dl className="space-y-1 text-sm">
-                <div><dt className="text-gray-500">หมวดหมู่</dt><dd className="font-medium">{currentCategory?.CategoryName ?? '—'}</dd></div>
-                <div><dt className="text-gray-500">สถานที่/ศูนย์ขนถ่าย</dt><dd className="font-medium">{locations.find((l) => String(l.id) === locationId)?.name ?? '—'}</dd></div>
-                <div><dt className="text-gray-500">เหตุผล</dt><dd className="font-medium whitespace-pre-wrap">{reason || '—'}</dd></div>
-                <div><dt className="text-gray-500">ระบบ</dt><dd className="font-medium">{systemType === 'อื่นๆ' ? systemTypeOther : systemType}</dd></div>
+                <div><dt className="text-gray-500">หมวดหมู่</dt><dd className="font-medium break-all">{currentCategory?.CategoryName ?? '—'}</dd></div>
+                <div><dt className="text-gray-500">สถานที่/ศูนย์ขนถ่าย</dt><dd className="font-medium break-all">{locations.find((l) => String(l.id) === locationId)?.name ?? '—'}</dd></div>
+                <div><dt className="text-gray-500">เหตุผล</dt><dd className="font-medium whitespace-pre-wrap break-all">{reason || '—'}</dd></div>
+                <div><dt className="text-gray-500">ระบบ</dt><dd className="font-medium break-all">{systemType === 'อื่นๆ' ? systemTypeOther : systemType}</dd></div>
               </dl>
             </div>
             <div className="rounded-lg border border-gray-200 p-4 bg-gray-50/50">
@@ -614,7 +638,7 @@ export default function NewRequestPage() {
                           {fields.map((fc, i) => (
                             <div key={i}>
                               <dt className="text-gray-500">{fc.label}</dt>
-                              <dd className="font-medium">{String(values[`val${i + 1}`] ?? '').trim() || '—'}</dd>
+                              <dd className="font-medium break-all">{String(values[`val${i + 1}`] ?? '').trim() || '—'}</dd>
                             </div>
                           ))}
                         </dl>

@@ -96,17 +96,19 @@ export async function GET(request: NextRequest) {
       // ─── กรองตาม WorkflowTransition ───
       const { getCanonicalRoleNamesForApprover } = await import('@/lib/auth-constants');
       const canonicalNames = getCanonicalRoleNamesForApprover(roleName);
-      const matchingRoles = await prisma.role.findMany({
-        where: { roleName: { in: canonicalNames } },
-        select: { id: true },
-      });
-      const myRoleIds = matchingRoles.map((r) => r.id);
 
-      // หา currentUser department
-      const currentUser = await prisma.user.findUnique({
-        where: { id: Number(userId!) },
-        select: { departmentId: true },
-      });
+      // ยิง role + user พร้อมกัน (parallel)
+      const [matchingRoles, currentUser] = await Promise.all([
+        prisma.role.findMany({
+          where: { roleName: { in: canonicalNames } },
+          select: { id: true },
+        }),
+        prisma.user.findUnique({
+          where: { id: Number(userId!) },
+          select: { departmentId: true },
+        }),
+      ]);
+      const myRoleIds = matchingRoles.map((r) => r.id);
 
       if (myRoleIds.length > 0) {
         // หา transitions ที่ user มีสิทธิ์

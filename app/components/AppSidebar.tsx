@@ -7,19 +7,38 @@ import { getTabsForRole } from '@/lib/auth-constants';
 import { adminMenuItems } from '@/lib/admin-menu';
 import { useState, useEffect } from 'react';
 import { useSidebar } from '@/app/context/SidebarContext';
+import { createPortal } from 'react-dom';
 
 type CategoryItem = { CategoryID: number; CategoryName: string };
 
-// Tooltip component for collapsed mode
+// Tooltip component — ใช้ fixed position + portal เพื่อไม่โดน overflow-y-auto clip
 function Tooltip({ children, text, show }: { children: React.ReactNode; text: string; show: boolean }) {
+  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   if (!show) return <>{children}</>;
+
+  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
+    setVisible(true);
+  };
+
   return (
-    <div className="relative group">
+    <div onMouseEnter={handleMouseEnter} onMouseLeave={() => setVisible(false)}>
       {children}
-      <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-lg">
-        {text}
-        <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-900" />
-      </div>
+      {mounted && visible && createPortal(
+        <div
+          style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateY(-50%)', zIndex: 9999 }}
+          className="px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap shadow-lg pointer-events-none"
+        >
+          {text}
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-900" />
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -60,7 +79,7 @@ export default function AppSidebar() {
   const showText = !isCollapsed;
 
   return (
-    <aside className={`fixed left-0 top-0 z-40 h-screen ${sidebarWidth} bg-white border-r border-gray-100 shadow-2xl shadow-gray-200/50 flex flex-col transition-all duration-300 ease-in-out`}>
+    <aside className={`print:hidden fixed left-0 top-0 z-40 h-screen ${sidebarWidth} bg-white border-r border-gray-100 shadow-2xl shadow-gray-200/50 flex flex-col transition-all duration-300 ease-in-out`}>
       {/* Header Section */}
       <div className={`relative py-4 ${isCollapsed ? 'px-2' : 'px-4'} border-b border-gray-100 bg-gradient-to-b from-blue-50/40 to-white flex flex-col items-center justify-center min-h-[88px]`}>
         <Link href="/dashboard" className="flex flex-col items-center group w-full" onClick={closeMobile}>
@@ -116,7 +135,7 @@ export default function AppSidebar() {
                 <Link
                   href="/dashboard"
                   onClick={closeMobile}
-                  className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${pathname === '/dashboard' || pathname === '/'
+                  className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group ${pathname === '/dashboard' || pathname === '/'
                     ? 'bg-blue-50 text-blue-700 shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
@@ -200,7 +219,7 @@ export default function AppSidebar() {
                     <Link
                       href={tab.path}
                       onClick={closeMobile}
-                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${isActive
+                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group ${isActive
                         ? 'bg-blue-50 text-blue-700 shadow-sm'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                         }`}
@@ -228,7 +247,7 @@ export default function AppSidebar() {
                     <Link
                       href={tab.path}
                       onClick={closeMobile}
-                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group overflow-hidden ${isActive
+                      className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-3.5'} rounded-xl ${isCollapsed ? 'px-0 py-3' : 'px-4 py-3'} text-sm font-semibold transition-all duration-200 group ${isActive
                         ? 'bg-blue-50 text-blue-700 shadow-sm'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                         }`}

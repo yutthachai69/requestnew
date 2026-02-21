@@ -3,6 +3,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getCanonicalRoleNamesForApprover } from '@/lib/auth-constants';
+import { getNextApproversForStatus } from '@/lib/workflow';
+import { createNotification } from '@/lib/notification';
+import { sendApprovalEmail } from '@/lib/mail';
+import { getApprovalTemplate, getRevisionEmail } from '@/lib/email-helper';
 
 /** POST /api/requests/bulk-action - ดำเนินการกลุ่ม (อนุมัติ/ปฏิเสธหลายรายการ) */
 export async function POST(request: NextRequest) {
@@ -55,7 +59,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 🔒 Security Check 3: ตรวจ WorkflowTransition สำหรับแต่ละคำร้อง ───
-    // หา roleIds ที่ตรงกับ user
     const canonicalRoleNames = getCanonicalRoleNamesForApprover(roleName);
     const matchingRoles = await prisma.role.findMany({
       where: { roleName: { in: canonicalRoleNames } },
@@ -63,13 +66,11 @@ export async function POST(request: NextRequest) {
     });
     const myRoleIds = matchingRoles.map((r) => r.id);
 
-    // หา transitions ที่ user นี้มีสิทธิ์ทำ
     const myTransitions = await prisma.workflowTransition.findMany({
       where: { requiredRoleId: { in: myRoleIds } },
       select: { categoryId: true, currentStatusId: true, filterByDepartment: true, nextStatusId: true },
     });
 
-    // สร้าง lookup map: "categoryId-currentStatusId" → transition info
     const transitionMap = new Map<string, { filterByDepartment: boolean; nextStatusId: number }>();
     for (const t of myTransitions) {
       const key = `${t.categoryId}-${t.currentStatusId}`;
@@ -78,7 +79,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ดึงคำร้องที่เลือกมา (ต้องไม่ปิดงานแล้ว)
     const closedStatusIds = await prisma.status.findMany({
       where: { code: { in: ['CLOSED', 'REJECTED'] } },
       select: { id: true },
@@ -89,12 +89,32 @@ export async function POST(request: NextRequest) {
         id: { in: requestIds },
         currentStatusId: { notIn: closedStatusIds.length > 0 ? closedStatusIds : [0] },
       },
-      select: { id: true, workOrderNo: true, categoryId: true, currentStatusId: true, departmentId: true },
+      select: {
+        id: true,
+        workOrderNo: true,
+        thaiName: true,
+        problemDetail: true,
+        categoryId: true,
+        currentStatusId: true,
+        departmentId: true,
+        requesterId: true,
+        requester: { select: { email: true, fullName: true } },
+      },
     });
 
-    // กรองเฉพาะคำร้องที่ user มีสิทธิ์จริง
     const rejectedStatus = await prisma.status.findFirst({ where: { code: 'REJECTED' }, select: { id: true } });
-    const allowedRequests: { id: number; workOrderNo: string | null; nextStatusId: number }[] = [];
+    const allowedRequests: {
+      id: number;
+      workOrderNo: string | null;
+      thaiName: string | null;
+      problemDetail: string | null;
+      nextStatusId: number;
+      categoryId: number;
+      departmentId: number | null;
+      requesterId: number | null;
+      requesterEmail: string | null;
+      requesterName: string | null;
+    }[] = [];
     const skippedRequests: string[] = [];
 
     for (const req of selectedRequests) {
@@ -102,20 +122,28 @@ export async function POST(request: NextRequest) {
       const transition = transitionMap.get(key);
 
       if (!transition) {
-        // ไม่มี transition ที่ตรง → user ไม่มีสิทธิ์
         skippedRequests.push(req.workOrderNo ?? `#${req.id}`);
         continue;
       }
 
       if (transition.filterByDepartment && req.departmentId !== currentUser.departmentId) {
-        // ต้องเป็นแผนกเดียวกัน แต่ไม่ใช่
         skippedRequests.push(req.workOrderNo ?? `#${req.id}`);
         continue;
       }
 
-      // กรณีปฏิเสธ → ใช้ status REJECTED, กรณีอนุมัติ → ใช้ nextStatusId จาก transition
       const nextId = actionName === 'REJECT' ? rejectedStatus?.id : transition.nextStatusId;
-      allowedRequests.push({ id: req.id, workOrderNo: req.workOrderNo, nextStatusId: nextId ?? transition.nextStatusId });
+      allowedRequests.push({
+        id: req.id,
+        workOrderNo: req.workOrderNo,
+        thaiName: req.thaiName,
+        problemDetail: req.problemDetail ?? null,
+        nextStatusId: nextId ?? transition.nextStatusId,
+        categoryId: req.categoryId,
+        departmentId: req.departmentId,
+        requesterId: req.requesterId,
+        requesterEmail: req.requester?.email ?? null,
+        requesterName: req.requester?.fullName ?? null,
+      });
     }
 
     if (allowedRequests.length === 0) {
@@ -124,7 +152,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // ดำเนินการ: อัพเดตทีละรายการเพราะ nextStatusId อาจต่างกัน
     const nextStatusLookup = new Map<number, { code: string }>();
     const uniqueNextIds = [...new Set(allowedRequests.map((r) => r.nextStatusId))];
     const nextStatuses = await prisma.status.findMany({
@@ -134,7 +161,6 @@ export async function POST(request: NextRequest) {
     nextStatuses.forEach((s) => nextStatusLookup.set(s.id, { code: s.code }));
 
     await prisma.$transaction([
-      // อัพเดตแต่ละคำร้อง
       ...allowedRequests.map((r) =>
         prisma.iTRequestF07.update({
           where: { id: r.id },
@@ -145,7 +171,6 @@ export async function POST(request: NextRequest) {
           },
         })
       ),
-      // สร้าง Audit Log
       ...allowedRequests.map((r) =>
         prisma.auditLog.create({
           data: {
@@ -157,6 +182,69 @@ export async function POST(request: NextRequest) {
         })
       ),
     ]);
+
+    // ─── ส่ง Notification + Email ด้วย Timeout Race (maximum 8 วินาที) ───
+    // ถ้าส่งเสร็จก่อน  8 วินาที → รอแล้ว Return พร้อมกัน ✔เชื่อถือได้
+    // ถ้าช้าเกิน 8 วินาที → Return ก่อน แล้ว Background ทำต่อ ✔ไม่บล็อค User
+    const notifyAll = Promise.allSettled(
+      allowedRequests.map(async (r) => {
+        try {
+          if (actionName === 'REJECT') {
+            // แจ้ง Requester (In-App + Email)
+            if (r.requesterId) {
+              await createNotification(
+                r.requesterId,
+                `คำร้องของคุณ (#${r.workOrderNo}) ถูกส่งกลับแก้ไข กรุณาตรวจสอบและแก้ไขคำร้อง`,
+                r.id
+              );
+            }
+            if (r.requesterEmail) {
+              const requestData = { requestId: r.id, requestNumber: r.workOrderNo ?? undefined };
+              const { subject, body } = getRevisionEmail(requestData, { fullName: r.requesterName ?? '' });
+              await sendApprovalEmail({ to: [r.requesterEmail], subject, body });
+            }
+          } else {
+            // แจ้ง Next Approvers (In-App + Email)
+            const nextApprovers = await getNextApproversForStatus(
+              r.categoryId,
+              r.nextStatusId,
+              r.departmentId ?? undefined,
+              null
+            );
+            for (const approver of nextApprovers) {
+              if (approver.id) {
+                await createNotification(
+                  approver.id,
+                  `มีใบงานรออนุมัติ: ${r.workOrderNo} (${r.thaiName})`,
+                  r.id
+                );
+              }
+            }
+            const emails = nextApprovers.map((a) => a.email).filter(Boolean);
+            if (emails.length > 0) {
+              const templateRequest = {
+                id: r.id,
+                workOrderNo: r.workOrderNo,
+                thaiName: r.thaiName ?? '',
+                problemDetail: r.problemDetail ?? '',
+              };
+              const { subject, body: emailBody } = getApprovalTemplate(templateRequest, nextApprovers[0].fullName);
+              await sendApprovalEmail({
+                to: emails,
+                subject,
+                body: emailBody,
+                senderName: r.thaiName || undefined,
+                replyTo: r.requesterEmail || undefined,
+              });
+            }
+          }
+        } catch (err) {
+          console.error(`Bulk notification/email error for request #${r.workOrderNo}:`, err);
+        }
+      })
+    );
+    const timeoutFallback = new Promise<void>((resolve) => setTimeout(resolve, 8000));
+    await Promise.race([notifyAll, timeoutFallback]);
 
     const resultMsg = `ดำเนินการ ${actionName === 'APPROVE' ? 'อนุมัติ' : 'ปฏิเสธ'} ${allowedRequests.length} รายการสำเร็จ`;
     const skippedMsg = skippedRequests.length > 0

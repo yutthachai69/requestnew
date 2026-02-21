@@ -21,13 +21,18 @@ type RequestData = {
   requester?: { position?: string | null } | null;
 };
 
-type HistoryItem = { FullName: string; RoleName: string; ActionType: string; ApprovalTimestamp: string };
+type HistoryItem = {
+  FullName: string;
+  RoleName: string;
+  ActionType: string;
+  ApprovalTimestamp: string;
+};
 
 /** คำนวณลายเซ็นจากประวัติการอนุมัติ — รองรับชื่อ role ไทย/อังกฤษ */
 function getSignaturesFromHistory(history: HistoryItem[]) {
   const approvedByAnyRole = (roleNames: string[]) => {
     const entry = [...history].reverse().find((h) => h.ActionType === 'อนุมัติ' && roleNames.includes(h.RoleName));
-    return entry?.FullName ?? undefined;
+    return entry ? entry.FullName : undefined;
   };
   return {
     reviewer: approvedByAnyRole(['Head of Department', 'หัวหน้าแผนก', 'Manager', 'หน.แผนก', 'ผู้จัดการฝ่าย']),
@@ -223,7 +228,7 @@ export default function RequestPrintPage() {
 
         // Save final merged document
         const mergedBytes = await finalPdfDoc.save();
-        const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+        const blob = new Blob([mergedBytes as unknown as BlobPart], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -360,7 +365,14 @@ export default function RequestPrintPage() {
         id="export-form-paper"
         className="print:bg-white print:p-0 print:shadow-none bg-white max-w-[210mm] mx-auto"
       >
-        <F07FormPrint request={{ ...request, position: request.requester?.position ?? request.position ?? null }} signatures={getSignaturesFromHistory(history)} resolvedBy={resolvedBy} resolvedAt={resolvedAt} approvedByITViewer={approvedByITViewer} itObstacles={itObstacles} />
+        <F07FormPrint
+          request={{ ...request, position: request.requester?.position ?? request.position ?? null }}
+          signatures={getSignaturesFromHistory(history)}
+          resolvedBy={resolvedBy}
+          resolvedAt={resolvedAt}
+          approvedByITViewer={approvedByITViewer}
+          itObstacles={itObstacles}
+        />
       </div>
 
       {/* Attachment preview section */}
@@ -401,14 +413,7 @@ export default function RequestPrintPage() {
         </div>
       )}
 
-      <p className="text-xs text-gray-500 mt-4 print:hidden max-w-[210mm] mx-auto">
-        ปุ่ม &quot;ส่งออกเป็น PDF&quot; จะถ่ายรูปฟอร์มแล้วบันทึกเป็น PDF (ตรงตามจอ, ภาษาไทยไม่เพี้ยน). หรือใช้ลิงก์ &quot;ดาวน์โหลด PDF จากเซิร์ฟเวอร์&quot; ถ้าต้องการไฟล์ที่เลือก/ค้นหาข้อความได้
-        {attachments.length > 0 && (
-          <span className="block mt-1">
-            <strong>หมายเหตุ:</strong> เมื่อเลือก &quot;รวมไฟล์แนบ&quot; ไฟล์รูปภาพจะถูกเพิ่มเป็นหน้าใหม่ใน PDF และไฟล์ PDF จะถูก merge เข้าด้วยกัน
-          </span>
-        )}
-      </p>
+
     </div>
   );
 }

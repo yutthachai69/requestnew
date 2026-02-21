@@ -20,13 +20,6 @@ type RequestData = {
   reasonForCorrection?: string | null;
 };
 
-/** ลายเซ็นจากประวัติการอนุมัติ — ผู้ตรวจสอบ = Head of Department, บัญชี = Accountant, ผู้อนุมัติ = Final Approver */
-export type Signatures = {
-  reviewer?: string;   // ผู้ตรวจสอบ (Head of Department)
-  accountant?: string; // ผู้ตรวจสอบ (บัญชี)
-  approver?: string;   // ผู้อนุมัติ (Final Approver)
-};
-
 /** ผู้แก้ไขและวันที่/เวลาจาก IT_PROCESS (IT Operator ดำเนินการเสร็จ) */
 export type ResolvedInfo = {
   resolvedBy?: string | null;
@@ -66,7 +59,7 @@ export default function F07FormPrint({
   itObstacles,
 }: {
   request: RequestData;
-  signatures?: Signatures;
+  signatures?: { reviewer?: string; accountant?: string; approver?: string };
   resolvedBy?: string | null;
   resolvedAt?: string | null;
   /** ผู้อนุมัติในส่วนเทคโนโลยีสารสนเทศ = role IT Viewer (IT Reviewer) */
@@ -75,7 +68,26 @@ export default function F07FormPrint({
   itObstacles?: string | null;
 }) {
   const isERP = /^ERP\s*Softpro$/i.test(request.systemType ?? '');
-  const lines = (request.problemDetail || '').split('\n');
+
+  // แบ่งข้อความยาวเป็นหลายแถว โดยตัดที่ช่องว่างก่อน ~55 ตัว เพื่อไม่ให้คำขาดกลาง
+  const MAX_CHARS = 55;
+  const rawLines = (request.problemDetail || '').split('\n');
+  const lines: string[] = [];
+  for (const raw of rawLines) {
+    if (!raw.trim()) { continue; }
+    let remaining = raw;
+    while (remaining.length > 0) {
+      if (remaining.length <= MAX_CHARS) {
+        lines.push(remaining);
+        break;
+      }
+      // หาช่องว่างสุดท้ายก่อนถึง MAX_CHARS
+      const lastSpace = remaining.lastIndexOf(' ', MAX_CHARS);
+      const splitAt = lastSpace > MAX_CHARS * 0.4 ? lastSpace : MAX_CHARS;
+      lines.push(remaining.slice(0, splitAt).trimEnd());
+      remaining = remaining.slice(splitAt).trimStart();
+    }
+  }
   const hasITClosed = Boolean(resolvedAt);
   const resolvedDate = resolvedAt ? formatDate(resolvedAt) : undefined;
   const resolvedTime = resolvedAt ? formatTime(resolvedAt) : undefined;
@@ -139,7 +151,7 @@ export default function F07FormPrint({
               <span className={`w-4 h-4 flex-shrink-0 border-2 border-black flex items-center justify-center leading-none ${!isERP ? 'bg-[#e5e7eb]' : ''}`}>
                 {!isERP ? <span className="text-[10px] font-bold -mt-2">✓</span> : null}
               </span>
-              <span>อื่นๆ (ระบุ) <DottedLine value={!isERP ? request.systemType : undefined} className="min-w-[180px] ml-1" /></span>
+              <span className="break-all">อื่นๆ (ระบุ) <DottedLine value={!isERP ? request.systemType : undefined} className="min-w-[180px] ml-1 break-all" /></span>
             </div>
           </div>
 
@@ -148,18 +160,30 @@ export default function F07FormPrint({
             <div className="flex-1 border-r border-black flex flex-col">
               <p className="px-2 py-1.5 font-bold text-sm border-b border-black bg-[#f9fafb]">ระบุรายละเอียดของปัญหา</p>
               <div className="flex-1 flex flex-col">
-                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="flex-1 min-h-[24px] border-b border-dotted border-[#9ca3af] px-2 py-0.5 flex items-center">
+                {Array.from({ length: Math.max(7, lines.length) }, (_, i) => (
+                  <div key={i} className="min-h-[24px] border-b border-dotted border-[#9ca3af] px-2 py-0.5">
                     {lines[i] ?? '\u00A0'}
                   </div>
                 ))}
               </div>
             </div>
-            <div className="w-[240px] p-3 flex flex-col justify-end gap-3 text-sm bg-white">
-              <div>ผู้ขอ <DottedLine value={request.thaiName} className="min-w-[140px] ml-1 inline-block" /></div>
-              <div>ผู้ตรวจสอบ <DottedLine value={signatures?.reviewer} className="min-w-[140px] ml-1 inline-block" /></div>
-              <div>ผู้ตรวจสอบ (บัญชี) <DottedLine value={signatures?.accountant} className="min-w-[140px] ml-1 inline-block" /></div>
-              <div>ผู้อนุมัติ <DottedLine value={signatures?.approver} className="min-w-[140px] ml-1 inline-block" /></div>
+            <div className="w-[260px] p-3 flex flex-col justify-end text-sm bg-white">
+              <div className="flex items-end gap-1 mb-2">
+                <span className="whitespace-nowrap flex-shrink-0">ผู้ขอ</span>
+                <DottedLine value={request.thaiName} className="flex-1 text-center" />
+              </div>
+              <div className="flex items-end gap-1 mb-2">
+                <span className="whitespace-nowrap flex-shrink-0">ผู้ตรวจสอบ</span>
+                <DottedLine value={signatures?.reviewer} className="flex-1 text-center" />
+              </div>
+              <div className="flex items-end gap-1 mb-2">
+                <span className="whitespace-nowrap flex-shrink-0">ผู้ตรวจสอบ (บัญชี)</span>
+                <DottedLine value={signatures?.accountant} className="flex-1 text-center" />
+              </div>
+              <div className="flex items-end gap-1 mb-3">
+                <span className="whitespace-nowrap flex-shrink-0">ผู้อนุมัติ</span>
+                <DottedLine value={signatures?.approver} className="flex-1 text-center" />
+              </div>
             </div>
           </div>
 
@@ -178,13 +202,13 @@ export default function F07FormPrint({
               {/* ส่วนเทคโนโลยีสารสนเทศ: ผู้อนุมัติ = role IT Viewer, ผู้แก้ไข = role IT Operator */}
               <div className="flex items-baseline gap-2 mb-2">
                 <span>ผู้อนุมัติ</span>
-                <DottedLine value={displayITViewer} className="min-w-[160px] flex-1" />
+                <DottedLine value={approvedByITViewer ?? undefined} className="min-w-[160px] flex-1" />
               </div>
               <div className="flex items-baseline gap-2 mb-3">
                 <span>ผู้แก้ไข</span>
                 <DottedLine value={displayResolvedBy} className="min-w-[160px] flex-1" />
               </div>
-              <p className="text-sm mb-1">ปัญหาอุปสรรค (ถ้ามี) <DottedLine value={itObstacles ?? undefined} className="min-w-[200px] ml-1 inline-block" /></p>
+              <p className="text-sm mb-1 mt-2">ปัญหาอุปสรรค (ถ้ามี) <DottedLine value={itObstacles ?? undefined} className="min-w-[200px] ml-1 inline-block" /></p>
             </div>
             <div className="bg-[#e0f2fe] border-2 border-[#60a5fa] p-4 min-w-[240px]">
               <p className="text-sm mb-2">หมายเลขที่งาน <DottedLine value={request.workOrderNo ?? undefined} className="min-w-[120px] ml-1" /></p>

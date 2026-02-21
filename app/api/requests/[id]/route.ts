@@ -46,7 +46,14 @@ export async function GET(
     const historyLogs = await prisma.auditLog.findMany({
       where: { requestId: id, action: { in: ['APPROVE', 'REJECT', 'IT_PROCESS', 'CONFIRM_COMPLETE'] } },
       orderBy: { timestamp: 'asc' },
-      include: { user: { select: { fullName: true, role: { select: { roleName: true } } } } },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            role: { select: { roleName: true } }
+          }
+        }
+      },
     });
     const actionTypeLabel: Record<string, string> = {
       APPROVE: 'อนุมัติ',
@@ -54,28 +61,28 @@ export async function GET(
       IT_PROCESS: 'ดำเนินการเสร็จสิ้น (IT)',
       CONFIRM_COMPLETE: 'ยืนยันปิดงาน',
     };
-    const history = historyLogs.map((log) => ({
+    const history = (historyLogs as any[]).map((log) => ({
       FullName: log.user?.fullName ?? '—',
       RoleName: log.user?.role?.roleName ?? '—',
       ActionType: actionTypeLabel[log.action] ?? log.action,
       Comment: log.detail ?? null,
       ApprovalTimestamp: log.timestamp,
     }));
-    const lastITProcess = [...historyLogs].reverse().find((l) => l.action === 'IT_PROCESS');
+    const lastITProcess = [...(historyLogs as any[])].reverse().find((l) => l.action === 'IT_PROCESS');
     const resolvedBy = lastITProcess?.user?.fullName ?? null;
     const resolvedAt = lastITProcess?.timestamp ?? null;
     // ปัญหาอุปสรรค (ถ้ามี) จาก comment ของ IT_PROCESS — detail เก็บเป็น "... → StatusName: comment"
     const itObstacles =
       lastITProcess?.detail != null
         ? (() => {
-          const afterArrow = lastITProcess.detail.split(' → ').pop() ?? '';
+          const afterArrow = (lastITProcess as any).detail.split(' → ').pop() ?? '';
           const idx = afterArrow.indexOf(': ');
           return idx >= 0 ? afterArrow.slice(idx + 2).trim() : null;
         })()
         : null;
     // ผู้อนุมัติในส่วนเทคโนโลยีสารสนเทศ = role IT Reviewer (It viewer)
     const IT_VIEWER_ROLES = ['IT Reviewer', 'It viewer'];
-    const lastITViewerLog = [...historyLogs].reverse().find((l) =>
+    const lastITViewerLog = [...(historyLogs as any[])].reverse().find((l) =>
       IT_VIEWER_ROLES.includes(l.user?.role?.roleName ?? '')
     );
     const approvedByITViewer = lastITViewerLog?.user?.fullName ?? null;
@@ -118,27 +125,27 @@ export async function GET(
 
     return NextResponse.json({
       request: {
-        id: request.id,
-        RequestID: request.id,
-        workOrderNo: request.workOrderNo,
-        RequestNumber: request.workOrderNo,
-        thaiName: request.thaiName,
-        phone: request.phone,
-        problemDetail: request.problemDetail,
-        systemType: request.systemType,
-        isMoneyRelated: request.isMoneyRelated,
-        status: request.status,
-        currentStatusId: request.currentStatusId,
-        currentStatus: request.currentStatus,
-        currentApprovalStep: (request as { currentApprovalStep?: number }).currentApprovalStep ?? 1,
-        attachmentPath: request.attachmentPath,
-        createdAt: request.createdAt,
-        updatedAt: request.updatedAt,
-        department: request.department,
-        category: request.category,
-        location: request.location,
-        requester: request.requester,
-        requesterId: request.requesterId,
+        id: (request as any).id,
+        RequestID: (request as any).id,
+        workOrderNo: (request as any).workOrderNo,
+        RequestNumber: (request as any).workOrderNo,
+        thaiName: (request as any).thaiName,
+        phone: (request as any).phone,
+        problemDetail: (request as any).problemDetail,
+        systemType: (request as any).systemType,
+        isMoneyRelated: (request as any).isMoneyRelated,
+        status: (request as any).status,
+        currentStatusId: (request as any).currentStatusId,
+        currentStatus: (request as any).currentStatus,
+        currentApprovalStep: (request as any).currentApprovalStep ?? 1,
+        attachmentPath: (request as any).attachmentPath,
+        createdAt: (request as any).createdAt,
+        updatedAt: (request as any).updatedAt,
+        department: (request as any).department,
+        category: (request as any).category,
+        location: (request as any).location,
+        requester: (request as any).requester,
+        requesterId: (request as any).requesterId,
       },
       history,
       possibleActions,

@@ -1,10 +1,23 @@
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { allowedDashboardRoles, reportRoles } from '@/lib/auth-constants';
+import { allowedDashboardRoles, reportRoles, approverRoles, requesterRoles } from '@/lib/auth-constants';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Global Rate Limit: 100 requests per minute per IP
+  const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
+  const rateLimitKey = getRateLimitKey(ip, 'global');
+  const rateLimitResult = checkRateLimit(rateLimitKey, {
+    maxRequests: 100, // 100 requests
+    windowSec: 60,    // per 60 seconds (1 minute)
+  });
+
+  if (!rateLimitResult.allowed) {
+    return new NextResponse('Too Many Requests', { status: 429 });
+  }
 
   // เรียก getToken ครั้งเดียวแล้วใช้ซ้ำ
   const token = await getToken({
@@ -47,9 +60,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // /pending-tasks
+  // /pending-tasks — เฉพาะ approver roles เท่านั้น
   if (pathname.startsWith('/pending-tasks')) {
     if (!token) return redirectToLogin();
+    // ถ้า login แล้วแต่ไม่มีสิทธิ์อนุมัติ → redirect ไป dashboard
+    if (!approverRoles.includes(role ?? '')) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
   }
 
   // /profile
@@ -70,9 +87,14 @@ export async function middleware(request: NextRequest) {
     if (!token) return redirectToLogin();
   }
 
-  // /category
+  // /category — เฉพาะ requester roles และ Admin เท่านั้น
   if (pathname.startsWith('/category')) {
     if (!token) return redirectToLogin();
+    // Approver roles ไม่ควรเข้าหน้า category → redirect ไป dashboard
+    const canAccessCategory = role === 'Admin' || (role != null && requesterRoles.includes(role));
+    if (!canAccessCategory) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
   }
 
   // /notifications

@@ -6,24 +6,26 @@ import { approverRoles, getCanonicalRoleNamesForApprover } from './auth-constant
  * ใช้แสดงตัวเลขบน Dashboard ให้ตรงกับหน้ารายการที่ต้องอนุมัติ
  */
 export async function getPendingTasksCount(userId: number, roleName: string | undefined): Promise<number> {
-  const currentUser = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, departmentId: true },
-  });
-  if (!currentUser) return 0;
-
-  if (roleName === 'Admin') {
-    return 0;
-  }
-
+  // Fast exits — ก่อน query DB ใดๆ
+  if (roleName === 'Admin') return 0;
   if (!roleName || !approverRoles.includes(roleName)) return 0;
 
   try {
     const canonicalRoleNames = getCanonicalRoleNamesForApprover(roleName);
-    const roles = await prisma.role.findMany({
-      where: { roleName: { in: canonicalRoleNames } },
-      select: { id: true },
-    });
+
+    // ยิง user + role พร้อมกัน (parallel — ไม่ต้องรอกัน)
+    const [currentUser, roles] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, departmentId: true },
+      }),
+      prisma.role.findMany({
+        where: { roleName: { in: canonicalRoleNames } },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!currentUser) return 0;
     const roleIds = roles.map((r) => r.id);
     if (roleIds.length === 0) return 0;
 
@@ -36,9 +38,7 @@ export async function getPendingTasksCount(userId: number, roleName: string | un
     if (myTransitions.length === 0) return 0;
 
     // Build strict OR conditions matching requests/route.ts logic
-    // ─── tab รอดำเนินการ: ใช้ transition matching เข้มงวด ───
     const orConditions: { categoryId: number; currentStatusId: number; departmentId?: number }[] = [];
-
     for (const t of myTransitions) {
       const condition: { categoryId: number; currentStatusId: number; departmentId?: number } = {
         categoryId: t.categoryId,

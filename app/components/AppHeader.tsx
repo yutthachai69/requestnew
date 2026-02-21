@@ -46,7 +46,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 bg-white/90 backdrop-blur-xl px-4 sm:px-6 shadow-sm border-b border-gray-200/50 transition-all">
+      <header className="print:hidden sticky top-0 z-30 flex h-16 items-center justify-between gap-4 bg-white/90 backdrop-blur-xl px-4 sm:px-6 shadow-sm border-b border-gray-200/50 transition-all">
         {/* Left: Menu Buttons */}
         <div className="flex-1 flex items-center gap-2">
           {/* Mobile Menu Button */}

@@ -63,6 +63,7 @@ export default function CategoryRequestsPage() {
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [requests, setRequests] = useState<ReqRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0); // 0 = คำร้องของฉัน (ไม่เสร็จ), 1 = รายการที่เสร็จแล้ว
 
   const isCompletedTab = tabIndex === 1;
@@ -75,6 +76,7 @@ export default function CategoryRequestsPage() {
   }, [sessionStatus, router]);
 
   const fetchCategories = useCallback(() => {
+    setCategoriesLoading(true);
     fetch('/api/master/categories', { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : []))
       .then((list: { CategoryID: number; CategoryName: string }[]) => {
@@ -82,7 +84,8 @@ export default function CategoryRequestsPage() {
         const c = (Array.isArray(list) ? list : []).find((x) => x.CategoryID === Number(categoryId));
         setCategory(c ?? null);
       })
-      .catch(() => setCategories([]));
+      .catch(() => setCategories([]))
+      .finally(() => setCategoriesLoading(false));
   }, [categoryId]);
 
   useEffect(() => {
@@ -141,10 +144,18 @@ export default function CategoryRequestsPage() {
     req.status === 'PENDING';
 
   const numId = Number(categoryId);
-  if (!numId || !category) {
+  // รอโหลด categories เสร็จก่อน ห้ามแสดง Error ระหว่างโหลด
+  if (!numId || (categoriesLoading ? false : !category)) {
+    if (categoriesLoading) {
+      return (
+        <div className="flex min-h-[200px] items-center justify-center p-6">
+          <p className="text-gray-500">กำลังโหลด...</p>
+        </div>
+      );
+    }
     return (
       <div className="p-6">
-        <p className="text-gray-500">ไม่พบหมวดหมู่ หรือคุณไม่มีสิทธิ์เข้าถึง</p>
+        <p className="text-gray-500">ไม่พบหมวดหมู่นี้</p>
         <Link href="/dashboard" className="mt-2 inline-block text-blue-600 hover:underline">กลับหน้าแรก</Link>
       </div>
     );

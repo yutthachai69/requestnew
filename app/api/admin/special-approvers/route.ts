@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (categoryId == null || Number.isNaN(categoryId))
     return NextResponse.json({ message: 'กรุณาระบุ categoryId' }, { status: 400 });
   try {
-    const list = await (prisma as { specialApproverMapping?: { findMany: (args: { where: { categoryId: number }; include: { user: { select: { id: true; fullName: true; email: true } } } }) => Promise<{ stepSequence: number; userId: number; user: { id: number; fullName: string; email: string } }[]> } })
+    const list = await (prisma as unknown as { specialApproverMapping?: { findMany: (args: { where: { categoryId: number }; include: { user: { select: { id: true; fullName: true; email: true } } } }) => Promise<{ stepSequence: number; userId: number; user: { id: number; fullName: string; email: string } }[]> } })
       .specialApproverMapping?.findMany({
         where: { categoryId },
         include: { user: { select: { id: true, fullName: true, email: true } } },
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (stepSequence == null || stepSequence < 1) return NextResponse.json({ message: 'กรุณาระบุลำดับขั้น' }, { status: 400 });
     if (userId == null || userId < 1) return NextResponse.json({ message: 'กรุณาเลือกผู้ใช้' }, { status: 400 });
 
-    await (prisma as { specialApproverMapping?: { upsert: (args: { where: { categoryId_stepSequence: { categoryId: number; stepSequence: number } }; create: { categoryId: number; stepSequence: number; userId: number }; update: { userId: number } }) => Promise<unknown> } })
+    await (prisma as unknown as { specialApproverMapping?: { upsert: (args: { where: { categoryId_stepSequence: { categoryId: number; stepSequence: number } }; create: { categoryId: number; stepSequence: number; userId: number }; update: { userId: number } }) => Promise<unknown> } })
       .specialApproverMapping?.upsert({
         where: { categoryId_stepSequence: { categoryId, stepSequence } },
         create: { categoryId, stepSequence, userId },
@@ -83,7 +83,7 @@ export async function DELETE(request: NextRequest) {
   if (categoryId == null || stepSequence == null)
     return NextResponse.json({ message: 'กรุณาระบุ categoryId และ stepSequence' }, { status: 400 });
   try {
-    await (prisma as { specialApproverMapping?: { delete: (args: { where: { categoryId_stepSequence: { categoryId: number; stepSequence: number } } }) => Promise<unknown> } })
+    await (prisma as unknown as { specialApproverMapping?: { delete: (args: { where: { categoryId_stepSequence: { categoryId: number; stepSequence: number } } }) => Promise<unknown> } })
       .specialApproverMapping?.delete({
         where: { categoryId_stepSequence: { categoryId, stepSequence } },
       });

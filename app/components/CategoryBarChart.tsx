@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import {
     BarChart,
     Bar,
@@ -17,6 +18,10 @@ export default function CategoryBarChart({
     data: { categoryId: number; categoryName: string; count: number }[]
 }) {
     const COLORS = ['#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#F43F5E', '#F97316'];
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
+
+    if (!mounted) return <div className="h-[300px] w-full" />;
 
     return (
         <div className="h-[300px] w-full">

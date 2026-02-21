@@ -3,6 +3,7 @@
 import AppSidebar from '@/app/components/AppSidebar';
 import AppHeader from '@/app/components/AppHeader';
 import { SidebarProvider, useSidebar } from '@/app/context/SidebarContext';
+import SessionExpiryWarning from '@/app/components/SessionExpiryWarning';
 
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed, isMobileOpen, closeMobile } = useSidebar();
@@ -50,6 +51,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         <AppHeader />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
+
+      {/* Session Expiry Warning — ไม่แสดงสำหรับ Admin */}
+      <SessionExpiryWarning />
     </div>
   );
 }

@@ -16,49 +16,56 @@ export async function GET() {
   const roleName = (session.user as { roleName?: string }).roleName;
 
   try {
-    const currentUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, departmentId: true },
-    });
-    if (!currentUser) return NextResponse.json({ error: 'User not found' }, { status: 403 });
-
-    // Admin: ไม่มีขั้นตอนอนุมัติ — ไม่แสดงรายการที่ต้องอนุมัติ
-    if (roleName === 'Admin') {
-      return NextResponse.json({ requests: [] });
-    }
-
-    if (!roleName || !approverRoles.includes(roleName)) {
-      return NextResponse.json({ requests: [] });
-    }
+    // Admin / Requester: ไม่มีรายการที่ต้องอนุมัติ
+    if (roleName === 'Admin') return NextResponse.json({ requests: [] });
+    if (!roleName || !approverRoles.includes(roleName)) return NextResponse.json({ requests: [] });
 
     const canonicalRoleNames = getCanonicalRoleNamesForApprover(roleName);
-    const roles = await prisma.role.findMany({
-      where: { roleName: { in: canonicalRoleNames } },
-      select: { id: true },
-    });
+
+    // ─── Round 1: parallel — ดึง user, roles, workflowSteps พร้อมกัน ───
+    const [currentUser, roles, allSteps] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, departmentId: true },
+      }),
+      prisma.role.findMany({
+        where: { roleName: { in: canonicalRoleNames } },
+        select: { id: true },
+      }),
+      // ดึง workflowStep ครั้งเดียว — ใช้ทั้ง specialApproverMapping และ step-based filter
+      prisma.workflowStep.findMany({
+        select: { categoryId: true, stepSequence: true, approverRoleName: true, filterByDepartment: true },
+      }),
+    ]);
+
+    if (!currentUser) return NextResponse.json({ error: 'User not found' }, { status: 403 });
     const roleIds = roles.map((r) => r.id);
     if (roleIds.length === 0) return NextResponse.json({ requests: [] });
 
-    const transitions = await prisma.workflowTransition.findMany({
-      where: { requiredRoleId: { in: roleIds } },
-      select: { categoryId: true, currentStatusId: true, filterByDepartment: true, stepSequence: true },
-    });
+    // ─── Round 2: parallel — transitions + specialApproverMapping ───
+    const allCategoryIds = [...new Set(allSteps.map((s) => s.categoryId))];
+    const [transitions, mappings] = await Promise.all([
+      prisma.workflowTransition.findMany({
+        where: { requiredRoleId: { in: roleIds } },
+        select: { categoryId: true, currentStatusId: true, filterByDepartment: true, stepSequence: true },
+      }),
+      (async () => {
+        try {
+          return await (prisma as unknown as { specialApproverMapping?: { findMany: (args: { where: { categoryId: { in: number[] } }; select: { categoryId: true; stepSequence: true; userId: true } }) => Promise<{ categoryId: number; stepSequence: number; userId: number }[]> } })
+            .specialApproverMapping?.findMany({
+              where: { categoryId: { in: allCategoryIds } },
+              select: { categoryId: true, stepSequence: true, userId: true },
+            }) ?? [];
+        } catch { return []; }
+      })(),
+    ]);
 
-    const allCategoryIdsForMapping = new Set(transitions.map((t) => t.categoryId));
+    // Build specialMap from already-fetched mappings
     const specialMap = new Map<string, number>();
-    try {
-      const stepsForMapping = await prisma.workflowStep.findMany({ select: { categoryId: true } });
-      stepsForMapping.forEach((s) => allCategoryIdsForMapping.add(s.categoryId));
-      const mappings = await (prisma as { specialApproverMapping?: { findMany: (args: { where: { categoryId: { in: number[] } }; select: { categoryId: true; stepSequence: true; userId: true } }) => Promise<{ categoryId: number; stepSequence: number; userId: number }[]> } })
-        .specialApproverMapping?.findMany({
-          where: { categoryId: { in: [...allCategoryIdsForMapping] } },
-          select: { categoryId: true, stepSequence: true, userId: true },
-        }) ?? [];
-      mappings.forEach((m) => specialMap.set(`${m.categoryId}-${m.stepSequence}`, m.userId));
-    } catch {
-      // ignore
-    }
+    (mappings as { categoryId: number; stepSequence: number; userId: number }[])
+      .forEach((m) => specialMap.set(`${m.categoryId}-${m.stepSequence}`, m.userId));
 
+    // Filter transitions by specialApproverMapping
     const myTransitions = transitions.filter((t) => {
       const key = `${t.categoryId}-${t.stepSequence}`;
       const specialUserId = specialMap.get(key);
@@ -66,7 +73,11 @@ export async function GET() {
       return true;
     });
 
-    const closedStatusIds = await prisma.status.findMany({ where: { code: { in: ['CLOSED', 'REJECTED'] } }, select: { id: true } }).then((r) => r.map((s) => s.id));
+    const closedStatusIds = await prisma.status.findMany({
+      where: { code: { in: ['CLOSED', 'REJECTED'] } },
+      select: { id: true },
+    }).then((r) => r.map((s) => s.id));
+
     const includeOpts = {
       department: { select: { id: true, name: true } },
       category: { select: { id: true, name: true } },
@@ -75,9 +86,11 @@ export async function GET() {
       currentStatus: { select: { id: true, code: true, displayName: true } },
     };
 
-    let requests: Awaited<ReturnType<typeof prisma.iTRequestF07.findMany>> = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let requests: any[] = [];
     const seenIds = new Set<number>();
 
+    // ─── Transition-based matching ───
     if (myTransitions.length > 0) {
       const statusIdsByCategory = new Map<number, Set<number>>();
       for (const t of myTransitions) {
@@ -93,14 +106,13 @@ export async function GET() {
         orderBy: { createdAt: 'desc' },
         include: includeOpts,
       });
-      const transitionKey = (catId: number, statusId: number) => `${catId}-${statusId}`;
       const transitionByKey = new Map<string, { filterByDepartment: boolean }>();
       myTransitions.forEach((t) => {
-        const key = transitionKey(t.categoryId, t.currentStatusId);
+        const key = `${t.categoryId}-${t.currentStatusId}`;
         if (!transitionByKey.has(key)) transitionByKey.set(key, { filterByDepartment: t.filterByDepartment });
       });
       requests = allPending.filter((r) => {
-        const key = transitionKey(r.categoryId, r.currentStatusId ?? 1);
+        const key = `${r.categoryId}-${r.currentStatusId ?? 1}`;
         const t = transitionByKey.get(key);
         if (!t) return false;
         if (t.filterByDepartment && r.departmentId !== currentUser.departmentId) return false;
@@ -109,12 +121,10 @@ export async function GET() {
       requests.forEach((r) => seenIds.add(r.id));
     }
 
-    const steps = await prisma.workflowStep.findMany({
-      select: { categoryId: true, stepSequence: true, filterByDepartment: true, approverRoleName: true },
-    });
+    // ─── Step-based matching (reuse allSteps fetched in Round 1) ───
     const myStepKeys = new Set<string>();
     const stepFilterByDept = new Map<string, boolean>();
-    for (const s of steps) {
+    for (const s of allSteps) {
       const allowed = getUserRoleNamesForWorkflowRole(s.approverRoleName).includes(roleName ?? '');
       if (!allowed) continue;
       const key = `${s.categoryId}-${s.stepSequence}`;
@@ -122,7 +132,7 @@ export async function GET() {
       stepFilterByDept.set(key, (s as { filterByDepartment?: boolean }).filterByDepartment ?? false);
     }
     if (myStepKeys.size > 0) {
-      const stepCategoryIds = [...new Set(steps.map((s) => s.categoryId))];
+      const stepCategoryIds = [...new Set(allSteps.map((s) => s.categoryId))];
       const stepPending = await prisma.iTRequestF07.findMany({
         where: {
           categoryId: { in: stepCategoryIds },
@@ -137,8 +147,7 @@ export async function GET() {
         if (seenIds.has(r.id)) return false;
         const filterDept = stepFilterByDept.get(key);
         if (filterDept && r.departmentId !== currentUser.departmentId) return false;
-        const specialKey = `${r.categoryId}-${(r as { currentApprovalStep?: number }).currentApprovalStep ?? 1}`;
-        const specialUserId = specialMap.get(specialKey);
+        const specialUserId = specialMap.get(key);
         if (specialUserId != null && specialUserId !== userId) return false;
         return true;
       });
@@ -159,7 +168,7 @@ function toPendingItem(r: {
   workOrderNo: string | null;
   thaiName?: string;
   problemDetail: string;
-  status: string;
+  status: string | null;
   createdAt: Date;
   approvalToken: string | null;
   currentStatusId?: number;
