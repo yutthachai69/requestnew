@@ -160,7 +160,6 @@ export function getTabsForRole(roleName: string | null | undefined): TabItem[] {
   // ── Admin ──
   if (roleName === 'Admin') {
     return [
-      { label: 'ภาพรวม', path: '/dashboard', statusFilter: null, isHistory: false, displayOrder: 1 },
       { label: 'รายงาน', path: '/report', statusFilter: null, isHistory: false, displayOrder: 4 },
       { label: 'โปรไฟล์', path: '/profile', statusFilter: null, isHistory: false, displayOrder: 5 },
     ];

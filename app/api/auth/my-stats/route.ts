@@ -1,14 +1,12 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 /** GET /api/auth/my-stats - สถิติของผู้ใช้ปัจจุบัน (จำนวนคำร้องที่สร้าง, จำนวนครั้งที่ดำเนินการ) */
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const userId = (session.user as { id?: string }).id;
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
+  const userId = String(auth.id);
   if (!userId) return NextResponse.json({ requestsCreated: 0, actionsTaken: 0 });
 
   try {

@@ -16,15 +16,17 @@ export async function generateRequestNumber(
 
     // 2. ถ้าไม่มี ให้สร้างใหม่ (เริ่มที่ 0)
     if (!config) {
-        // หา Prefix จาก Category หรือใช้ default 'IT-F07' (ควรแก้ให้ดึงจาก Category จริงๆ ถ้ามี field prefix)
-        // แต่ใน schema DocConfig มี prefix field อยู่แล้ว ซึ่งน่าจะ copy มาจากปีเก่าได้
-        // ลองหาปีล่าสุดก่อนหน้า
+        // หา Prefix จากปีก่อนหน้า
         const lastConfig = await tx.docConfig.findFirst({
             where: { categoryId },
             orderBy: { year: 'desc' }
         });
 
-        const prefix = lastConfig?.prefix || 'IT-F07';
+        // Category code mapping (fallback)
+        const CATEGORY_CODES: Record<number, string> = {
+            1: 'IT-F07-GN', 2: 'IT-F07-MA', 3: 'IT-F07-WB', 4: 'IT-F07-TC', 5: 'IT-F07-WH',
+        };
+        const prefix = lastConfig?.prefix || CATEGORY_CODES[categoryId] || 'IT-F07';
 
         config = await tx.docConfig.create({
             data: { categoryId, year: currentYearBE, prefix, lastRunningNumber: 0 }

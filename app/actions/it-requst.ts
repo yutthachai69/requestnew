@@ -17,8 +17,17 @@ export async function createITRequest(formData: FormData) {
       })
 
       if (!config) {
+        // หา prefix จากปีก่อนหน้า (ถ้ามี)
+        const lastConfig = await tx.docConfig.findFirst({
+          where: { categoryId },
+          orderBy: { year: 'desc' },
+        })
+        const CATEGORY_CODES: Record<number, string> = {
+          1: 'IT-F07-GN', 2: 'IT-F07-MA', 3: 'IT-F07-WB', 4: 'IT-F07-TC', 5: 'IT-F07-WH',
+        }
+        const prefix = lastConfig?.prefix || CATEGORY_CODES[categoryId] || 'IT-F07'
         config = await tx.docConfig.create({
-          data: { categoryId, year: currentYearBE, prefix: 'IT-F07', lastRunningNumber: 0 }
+          data: { categoryId, year: currentYearBE, prefix, lastRunningNumber: 0 }
         })
       }
 

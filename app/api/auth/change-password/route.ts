@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { hashPassword } from '@/lib/hash';
+import { hashPassword, verifyPassword } from '@/lib/hash';
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 
 /** PUT /api/auth/change-password - เปลี่ยนรหัสผ่าน (ต้องล็อกอิน) */
 export async function PUT(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
 
   try {
     const body = await request.json();
@@ -21,11 +20,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ message: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
+    const user = await prisma.user.findUnique({ where: { id: auth.id } });
     if (!user) return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
-    if (user.password !== hashPassword(oldPassword)) {
+
+    const check = verifyPassword(oldPassword, user.password);
+    if (!check.ok) {
       return NextResponse.json({ message: 'รหัสผ่านเดิมไม่ถูกต้อง' }, { status: 400 });
     }
 

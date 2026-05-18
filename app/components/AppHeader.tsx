@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import Link from 'next/link';
 import { useAppNotification } from '../context/AppNotificationContext';
 import { useSidebar } from '../context/SidebarContext';
@@ -10,7 +10,7 @@ interface AppHeaderProps {
   onMenuClick?: () => void;
 }
 
-export default function AppHeader({ onMenuClick }: AppHeaderProps) {
+function AppHeader({ onMenuClick }: AppHeaderProps) {
   const { data: session } = useSession();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useAppNotification();
   const { isCollapsed, toggleCollapse, openMobile } = useSidebar();
@@ -46,7 +46,7 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
 
   return (
     <>
-      <header className="print:hidden sticky top-0 z-30 flex h-16 items-center justify-between gap-4 bg-white/90 backdrop-blur-xl px-4 sm:px-6 shadow-sm border-b border-gray-200/50 transition-all">
+      <header className="print:hidden sticky top-0 z-30 flex h-16 items-center justify-between gap-4 bg-white px-4 sm:px-6 shadow-sm border-b border-gray-200/50">
         {/* Left: Menu Buttons */}
         <div className="flex-1 flex items-center gap-2">
           {/* Mobile Menu Button */}
@@ -254,3 +254,5 @@ export default function AppHeader({ onMenuClick }: AppHeaderProps) {
     </>
   );
 }
+
+export default memo(AppHeader);

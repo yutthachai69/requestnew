@@ -4,8 +4,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useNotification } from '@/app/context/NotificationContext';
-import StatusChart from '@/app/components/StatusChart';
+import dynamic from 'next/dynamic';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
+
+const StatusChart = dynamic(() => import('@/app/components/StatusChart'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
+      กำลังโหลดกราฟ...
+    </div>
+  ),
+});
 
 type ReportData = {
   summary: {

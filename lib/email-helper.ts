@@ -57,26 +57,35 @@ export function getApprovalTemplate(request: {
   workOrderNo: string | null;
   thaiName: string;
   problemDetail: string;
-}, approverName: string) {
+}, approverName: string, options?: { approvalToken?: string | null }) {
   const baseUrl = FRONTEND_URL;
-  // ลิงก์ไปหน้ารายละเอียดคำร้อง (ต้อง login ก่อน) เพื่อความปลอดภัยและบันทึกผู้อนุมัติได้
   const requestLink = `${baseUrl}/request/${request.id}`;
+  const approveLink = options?.approvalToken
+    ? `${baseUrl}/approve/${options.approvalToken}`
+    : null;
+
+  const approveButton = approveLink
+    ? `<a href="${approveLink}" style="background-color: #1976d2; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin: 0 8px 8px 0;">
+        อนุมัติผ่านลิงก์เมล
+      </a>`
+    : '';
 
   const content = `
     <p>เรียนคุณ ${approverName},</p>
     <p>มีคำร้องใหม่รอการพิจารณาอนุมัติจากท่าน โดยมีรายละเอียดดังนี้:</p>
     <table style="width: 100%; border-collapse: collapse;">
-      <tr><td style="padding: 5px; font-weight: bold; width: 120px;">เลขที่ใบงาน:</td><td>${request.workOrderNo}</td></tr>
+      <tr><td style="padding: 5px; font-weight: bold; width: 120px;">เลขที่ใบงาน:</td><td>${request.workOrderNo ?? request.id}</td></tr>
       <tr><td style="padding: 5px; font-weight: bold;">ผู้แจ้ง:</td><td>${request.thaiName}</td></tr>
       <tr><td style="padding: 5px; font-weight: bold;">รายละเอียด:</td><td>${request.problemDetail}</td></tr>
     </table>
     <div style="margin-top: 25px; text-align: center;">
+      ${approveButton}
       <a href="${requestLink}" style="background-color: #2e7d32; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-        คลิกเพื่อพิจารณาอนุมัติ
+        เปิดในระบบ
       </a>
     </div>
     <p style="color: #666; font-size: 12px; margin-top: 15px;">
-      หมายเหตุ: ท่านจะต้องเข้าสู่ระบบก่อนเพื่อดำเนินการอนุมัติ
+      ${approveLink ? 'ลิงก์อนุมัติใช้ได้หลังเข้าสู่ระบบด้วยบัญชีผู้อนุมัติ' : 'กรุณาเข้าสู่ระบบก่อนดำเนินการอนุมัติ'}
     </p>
   `;
 

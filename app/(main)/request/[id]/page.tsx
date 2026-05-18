@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { useNotification } from '@/app/context/NotificationContext';
+import { invalidateAppShellCache } from '@/lib/client/app-shell-cache';
+import { useAppNotification } from '@/app/context/AppNotificationContext';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
 
 // Dynamic import for F07FormPrint - lazy load as it's not needed immediately
@@ -44,6 +46,7 @@ type HistoryItem = {
   ActionType: string;
   Comment: string | null;
   ApprovalTimestamp: string;
+  SignatureUrl?: string | null;
 };
 
 export default function RequestDetailPage() {
@@ -51,8 +54,21 @@ export default function RequestDetailPage() {
   const id = params?.id as string;
   const { data: session } = useSession();
   const { showNotification } = useNotification();
+  const { refresh, notifications, markAsRead } = useAppNotification();
   const currentUserId = session?.user ? Number((session.user as { id?: string }).id) : null;
   const [request, setRequest] = useState<RequestDetail | null>(null);
+
+  useEffect(() => {
+    if (id && notifications.length > 0) {
+      const numericId = Number(id);
+      const unreadNotifs = notifications.filter(
+        (n) => n.RequestID === numericId && !n.IsRead
+      );
+      unreadNotifs.forEach((n) => {
+        markAsRead(n.NotificationID);
+      });
+    }
+  }, [id, notifications, markAsRead]);
   const [possibleActions, setPossibleActions] = useState<ActionItem[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [resolvedBy, setResolvedBy] = useState<string | null>(null);
@@ -136,6 +152,8 @@ export default function RequestDetailPage() {
         setApprovedByITViewer(refetchData.approvedByITViewer ?? null);
         setItObstacles(refetchData.itObstacles ?? null);
       }
+      invalidateAppShellCache();
+      refresh();
     } catch (e) {
       showNotification(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด', 'error');
     } finally {
@@ -168,9 +186,10 @@ export default function RequestDetailPage() {
   /** หาชื่อผู้อนุมัติจากประวัติ — รองรับทั้งชื่อ role ภาษาอังกฤษและไทย */
   const approvedByAnyRole = (roleNames: string[]) => {
     const entry = [...history].reverse().find((h) => h.ActionType === 'อนุมัติ' && roleNames.includes(h.RoleName));
-    return entry?.FullName ?? undefined;
+    return entry ? { name: entry.FullName, url: entry.SignatureUrl ?? null } : undefined;
   };
   const signatures = {
+    requester: request.requester ? { name: request.requester.fullName, url: (request.requester as any).signatureUrl ?? null } : undefined,
     reviewer: approvedByAnyRole(['Head of Department', 'หัวหน้าแผนก', 'Manager', 'หน.แผนก', 'ผู้จัดการฝ่าย']),
     accountant: approvedByAnyRole(['Accountant', 'บัญชี']),
     approver: approvedByAnyRole(['Final Approver', 'ผู้อนุมัติ', 'ผู้จัดการฝ่ายสำนักงาน', 'รองผู้อำนวยการโรงงาน', 'ผู้จัดการโรงงาน']),

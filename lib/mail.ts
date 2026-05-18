@@ -1,15 +1,8 @@
-// lib/mail.ts
-// ส่งอีเมลผ่าน Outlook SMTP (nodemailer) หรือ Internal API
-// 
-// วิธี 1: ใช้ Outlook SMTP (แนะนำ) - ตั้งค่าใน .env:
-//   SMTP_HOST=smtp.office365.com
-//   SMTP_PORT=587
-//   SMTP_USER=your-email@your-company.com
-//   SMTP_PASSWORD=your-password-or-app-password
-//   SMTP_FROM=your-email@your-company.com
+// lib/mail.ts — ส่งอีเมลผ่าน Internal API หรือ SMTP (Outlook)
 //
-// วิธี 2: ใช้ Internal Email API:
-//   INTERNAL_EMAIL_API_URL=https://your-email-api.example.com/send
+// .env (เลือกอย่างใดอย่างหนึ่ง):
+//   INTERNAL_EMAIL_API_URL=https://.../send
+//   หรือ SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
 
 interface EmailData {
   to: string[];
@@ -19,25 +12,50 @@ interface EmailData {
   replyTo?: string;
 }
 
-// ส่งผ่าน SMTP (nodemailer)
-const sendViaSMTP = async (emailData: EmailData): Promise<boolean> => {
+export type EmailSendResult =
+  | { ok: true; channel: 'api' | 'smtp'; to: string[] }
+  | { ok: false; reason: 'no_recipients' | 'not_configured' | 'api_failed' | 'smtp_failed'; detail?: string };
+
+const isDev = process.env.NODE_ENV !== 'production';
+
+function normalizeRecipients(to: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of to) {
+    const email = raw?.trim();
+    if (!email || !email.includes('@')) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
+  }
+  return out;
+}
+
+function getEmailApiUrl(): string | undefined {
+  return (
+    process.env.INTERNAL_EMAIL_API_URL?.trim() ||
+    process.env.VITE_INTERNAL_EMAIL_API_URL?.trim() ||
+    process.env.NEXT_PUBLIC_INTERNAL_EMAIL_API_URL?.trim() ||
+    undefined
+  );
+}
+
+const sendViaSMTP = async (emailData: EmailData, to: string[]): Promise<EmailSendResult> => {
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASSWORD;
 
-  // สร้าง Sender format: "ชื่อผู้ส่ง (via System)" <email@domain.com>
   let from = process.env.SMTP_FROM ?? user;
   if (emailData.senderName && from) {
-    // Clean senderName to avoid special characters issues if needed
     from = `"${emailData.senderName}" <${from}>`;
   }
 
   if (!host || !user || !pass) {
-    return false; // ไม่ได้ตั้งค่า SMTP
+    return { ok: false, reason: 'not_configured', detail: 'SMTP_* ไม่ครบ' };
   }
 
   try {
-    // Dynamic import เพื่อไม่ให้ crash ถ้าไม่มี nodemailer
     const nodemailer = await import('nodemailer');
     const port = Number(process.env.SMTP_PORT ?? 587);
 
@@ -46,32 +64,30 @@ const sendViaSMTP = async (emailData: EmailData): Promise<boolean> => {
       port,
       secure: port === 465,
       auth: { user, pass },
-      tls: { minVersion: 'TLSv1.2' }, // ใช้ TLS ที่ปลอดภัย
+      tls: { minVersion: 'TLSv1.2' },
     });
 
-    const info = await transporter.sendMail({
+    await transporter.sendMail({
       from,
-      to: emailData.to.join(', '),
-      replyTo: emailData.replyTo, // เพิ่ม Reply-To
+      to: to.join(', '),
+      replyTo: emailData.replyTo,
       subject: emailData.subject,
       html: emailData.body,
     });
 
-    // Log removed for production security
-    return true;
+    if (isDev) console.info('[mail] ส่ง SMTP สำเร็จ →', to.join(', '));
+    return { ok: true, channel: 'smtp', to };
   } catch (error) {
-    console.error('❌ ส่งอีเมลผ่าน SMTP ล้มเหลว:', error);
-    return false;
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('❌ ส่งอีเมลผ่าน SMTP ล้มเหลว:', detail);
+    return { ok: false, reason: 'smtp_failed', detail };
   }
 };
 
-// ส่งผ่าน Internal API
-const sendViaAPI = async (emailData: EmailData): Promise<boolean> => {
-  // Support both Next.js and Vite style env vars for compatibility
-  const apiUrl = process.env.INTERNAL_EMAIL_API_URL ?? process.env.VITE_INTERNAL_EMAIL_API_URL;
-
+const sendViaAPI = async (emailData: EmailData, to: string[]): Promise<EmailSendResult> => {
+  const apiUrl = getEmailApiUrl();
   if (!apiUrl) {
-    return false;
+    return { ok: false, reason: 'not_configured', detail: 'INTERNAL_EMAIL_API_URL ไม่ได้ตั้งค่า' };
   }
 
   const payload = {
@@ -79,11 +95,10 @@ const sendViaAPI = async (emailData: EmailData): Promise<boolean> => {
     appName: 'RequestOnlineSystem',
     subject: emailData.subject,
     body: emailData.body,
-    to: emailData.to,
-    cc: [],
-    bcc: [],
-    attachments: [],
-    // Extra fields if the API supports them or logs them
+    to,
+    cc: [] as string[],
+    bcc: [] as string[],
+    attachments: [] as unknown[],
     fromName: emailData.senderName,
     replyTo: emailData.replyTo,
   };
@@ -94,25 +109,39 @@ const sendViaAPI = async (emailData: EmailData): Promise<boolean> => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    // API might return 200 even if some logic failed, but we assume 200-299 is success
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 
-    // Log removed for production security
-    return true;
+    const text = await res.text();
+    if (!res.ok) {
+      console.error('❌ ส่งอีเมลผ่าน API ล้มเหลว:', res.status, text.slice(0, 300));
+      return { ok: false, reason: 'api_failed', detail: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+    }
+
+    if (isDev) console.info('[mail] ส่ง API สำเร็จ →', to.join(', '), text.slice(0, 120));
+    return { ok: true, channel: 'api', to };
   } catch (error) {
-    console.error('❌ ส่งอีเมลผ่าน API ล้มเหลว:', error);
-    return false;
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('❌ ส่งอีเมลผ่าน API ล้มเหลว:', detail);
+    return { ok: false, reason: 'api_failed', detail };
   }
 };
 
-export const sendApprovalEmail = async (emailData: EmailData) => {
-  // ลองส่งผ่าน Internal API ก่อน (ใช้แบบเดียวกับระบบเก่า)
-  const sentViaAPI = await sendViaAPI(emailData);
-  if (sentViaAPI) return;
+export const sendApprovalEmail = async (emailData: EmailData): Promise<EmailSendResult> => {
+  const to = normalizeRecipients(emailData.to);
+  if (to.length === 0) {
+    console.warn('⚠️ sendApprovalEmail: ไม่มีอีเมลผู้รับที่ถูกต้อง', emailData.subject);
+    return { ok: false, reason: 'no_recipients' };
+  }
 
-  // ถ้าไม่มี API ลองส่งผ่าน SMTP
-  const sentViaSMTP = await sendViaSMTP(emailData);
-  if (sentViaSMTP) return;
+  const viaAPI = await sendViaAPI(emailData, to);
+  if (viaAPI.ok) return viaAPI;
 
-  console.warn('⚠️ ไม่สามารถส่งอีเมลได้ - กรุณาตั้งค่า INTERNAL_EMAIL_API_URL หรือ SMTP ใน .env');
+  const viaSMTP = await sendViaSMTP(emailData, to);
+  if (viaSMTP.ok) return viaSMTP;
+
+  console.warn(
+    '⚠️ ไม่สามารถส่งอีเมลได้ — ตั้งค่า INTERNAL_EMAIL_API_URL หรือ SMTP ใน .env',
+    viaAPI.detail ?? viaAPI.reason,
+    viaSMTP.detail ?? viaSMTP.reason
+  );
+  return viaSMTP.ok ? viaSMTP : viaAPI;
 };

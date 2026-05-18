@@ -1,28 +1,53 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAuth, isAuthError } from '@/lib/api-auth';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-/** GET /api/dashboard/category-stats - สถิติตามหมวดหมู่ (สำหรับ Welcome/Chart) */
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+/** GET /api/dashboard/category-stats?startDate=&endDate= - สถิติตามหมวดหมู่ (สำหรับ Welcome/Chart) */
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
+  const userId = String(auth.id);
+  const roleName = auth.roleName;
 
-  const userId = (session.user as { id?: string }).id;
-  const roleName = (session.user as { roleName?: string }).roleName;
+  // ─── Parse date filter params ───
+  const { searchParams } = new URL(request.url);
+  const startDateParam = searchParams.get('startDate')?.trim();
+  const endDateParam = searchParams.get('endDate')?.trim();
+
+  let dateFilter: Record<string, unknown> | undefined;
+  if (startDateParam || endDateParam) {
+    dateFilter = {};
+    if (startDateParam) (dateFilter as any).gte = new Date(startDateParam);
+    if (endDateParam) {
+      const d = new Date(endDateParam);
+      d.setHours(23, 59, 59, 999);
+      (dateFilter as any).lte = d;
+    }
+  }
 
   try {
-    const categories = await prisma.category.findMany({
+    // Build request filter for date range
+    const requestDateFilter = dateFilter ? { createdAt: dateFilter } : {};
+
+    // Get all categories first
+    const allCategories = await prisma.category.findMany({
       orderBy: { name: 'asc' },
-      include: {
-        _count: { select: { requests: true } },
-      },
+      select: { id: true, name: true },
     });
 
-    let list = categories.map((c) => ({
+    // Count requests per category with date filter
+    const requestCounts = await prisma.iTRequestF07.groupBy({
+      by: ['categoryId'],
+      where: { ...requestDateFilter },
+      _count: { id: true },
+    });
+
+    const countMap = new Map(requestCounts.map(r => [r.categoryId, r._count.id]));
+
+    let list = allCategories.map((c) => ({
       categoryId: c.id,
       categoryName: c.name,
-      count: c._count.requests,
+      count: countMap.get(c.id) ?? 0,
     }));
 
     if (roleName !== 'Admin' && userId) {

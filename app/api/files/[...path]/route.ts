@@ -1,6 +1,5 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { readFile, getMimeType, getFilePath } from '@/lib/storage';
 
 /**
@@ -10,11 +9,8 @@ export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ path: string[] }> }
 ) {
-    // ตรวจสอบ session (ต้อง login ถึงจะดูไฟล์ได้)
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (isAuthError(auth)) return auth;
 
     const pathSegments = (await params).path;
     if (!pathSegments || pathSegments.length === 0) {

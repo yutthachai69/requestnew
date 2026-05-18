@@ -18,12 +18,33 @@ type RequestItem = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  COMPLETED: 'เสร็จสิ้น',
-  CLOSED: 'ปิดงานแล้ว',
-  PROCESSED: 'ดำเนินการแล้ว',
   PENDING: 'รอดำเนินการ',
-  REJECTED: 'ปฏิเสธ',
+  WAITING_ACCOUNT_1: 'รอนำส่งบัญชีตรวจสอบ',
+  WAITING_FINAL_APP: 'รอผู้อนุมัติสูงสุด',
+  IT_WORKING: 'รอ IT ดำเนินการ',
+  WAITING_ACCOUNT_2: 'รอตรวจสอบหลังแก้ไข',
+  WAITING_IT_CLOSE: 'รอ IT ปิดงาน',
+  CLOSED: 'ปิดงานเรียบร้อย',
+  REJECTED: 'ถูกปฏิเสธ',
+  REVISION: 'ส่งกลับแก้ไข',
+  COMPLETED: 'เสร็จสิ้น',
+  PROCESSED: 'ดำเนินการแล้ว',
   APPROVED: 'อนุมัติแล้ว',
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  PENDING: 'FFF59E0B',
+  WAITING_ACCOUNT_1: 'FF3B82F6',
+  WAITING_FINAL_APP: 'FF8B5CF6',
+  IT_WORKING: 'FFEC4899',
+  WAITING_ACCOUNT_2: 'FF14B8A6',
+  WAITING_IT_CLOSE: 'FF64748B',
+  CLOSED: 'FF10B981',
+  REJECTED: 'FFEF4444',
+  REVISION: 'FFF97316',
+  COMPLETED: 'FF10B981',
+  PROCESSED: 'FF3B82F6',
+  APPROVED: 'FF10B981',
 };
 
 export default function AdminAuditReportPage() {
@@ -41,7 +62,7 @@ export default function AdminAuditReportPage() {
   const fetchList = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '100' });
+      const params = new URLSearchParams({ limit: '25', page: '1' });
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
       if (search) params.set('search', search);
@@ -85,26 +106,67 @@ export default function AdminAuditReportPage() {
 
   const getStatusLabel = (status: string) => STATUS_LABEL[status] || status;
 
-  const exportExcel = () => {
-    const BOM = '\uFEFF';
-    const headers = ['เลขที่', 'หมวดหมู่', 'สถานะ', 'ผู้แจ้ง', 'รายละเอียดปัญหา', 'วันที่'];
-    const rows = list.map((r) => [
-      r.workOrderNo || 'ไม่ระบุ',
-      r.category?.name ?? '',
-      getStatusLabel(r.status),
-      r.requester?.fullName || r.requester?.username || '',
-      r.problemDetail ?? '',
-      formatDate(r.createdAt),
-    ]);
-    const csv = [headers, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `รายงานประวัติการดำเนินการ_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showNotification('ส่งออกไฟล์สำเร็จ', 'success');
+  const exportExcel = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = (await import('file-saver')).default;
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Report');
+
+      // Define columns with specific widths to prevent "######" and keep it neat
+      worksheet.columns = [
+        { header: 'เลขที่', key: 'workOrderNo', width: 20 },
+        { header: 'หมวดหมู่', key: 'category', width: 25 },
+        { header: 'สถานะ', key: 'status', width: 20 },
+        { header: 'ผู้แจ้ง', key: 'requester', width: 30 },
+        { header: 'รายละเอียดปัญหา', key: 'problemDetail', width: 60 },
+        { header: 'วันที่', key: 'date', width: 25 },
+      ];
+
+      // Style the header row
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2563EB' } // Tailwind blue-600
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      // Add data rows
+      list.forEach((r) => {
+        const row = worksheet.addRow({
+          workOrderNo: r.workOrderNo || 'ไม่ระบุ',
+          category: r.category?.name ?? '',
+          status: getStatusLabel(r.status),
+          requester: r.requester?.fullName || r.requester?.username || '',
+          problemDetail: r.problemDetail ?? '',
+          date: formatDate(r.createdAt),
+        });
+
+        // Enable wrap text for problemDetail to prevent extremely long horizontal lines
+        row.getCell('problemDetail').alignment = { wrapText: true, vertical: 'top' };
+        row.getCell('date').alignment = { vertical: 'top', horizontal: 'center' };
+        row.getCell('workOrderNo').alignment = { vertical: 'top' };
+        row.getCell('category').alignment = { vertical: 'top' };
+        row.getCell('requester').alignment = { vertical: 'top' };
+
+        const statusCell = row.getCell('status');
+        statusCell.alignment = { vertical: 'top' };
+        statusCell.font = { color: { argb: STATUS_COLOR[r.status] || 'FF000000' }, bold: true };
+      });
+
+      // Generate and save file
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `รายงานประวัติการดำเนินการ_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      
+      showNotification('ส่งออกไฟล์ Excel สำเร็จ', 'success');
+    } catch (error) {
+      console.error('Excel Export Error:', error);
+      showNotification('เกิดข้อผิดพลาดในการส่งออกไฟล์', 'error');
+    }
   };
 
   return (

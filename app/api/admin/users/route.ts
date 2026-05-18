@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/hash';
-
-function requireAdmin(session: unknown) {
-  const role = (session as { user?: { roleName?: string } })?.user?.roleName;
-  if (role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  return null;
-}
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 
 /** GET /api/admin/users - list all users (with role & department) */
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   try {
     const list = await prisma.user.findMany({
       orderBy: { id: 'asc' },
@@ -45,10 +36,8 @@ export async function GET() {
 
 /** POST /api/admin/users - create user */
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   try {
     const body = await request.json();
     const username = String(body.username ?? '').trim();
@@ -106,7 +95,7 @@ export async function POST(request: NextRequest) {
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2002')
-      return NextResponse.json({ message: 'ชื่อผู้ใช้หรืออีเมลซ้ำ' }, { status: 400 });
+      return NextResponse.json({ message: 'ชื่อผู้ใช้ซ้ำ' }, { status: 400 });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

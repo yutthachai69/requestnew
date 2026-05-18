@@ -1,24 +1,15 @@
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/hash';
-
-function requireAdmin(session: unknown) {
-  const role = (session as { user?: { roleName?: string } })?.user?.roleName;
-  if (role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  return null;
-}
 
 /** PUT /api/admin/users/[id] - update user (optional new password) */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   try {
@@ -92,7 +83,7 @@ export async function PUT(
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2025') return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
-    if (code === 'P2002') return NextResponse.json({ message: 'อีเมลซ้ำ' }, { status: 400 });
+    if (code === 'P2002') return NextResponse.json({ message: 'ชื่อผู้ใช้ซ้ำ' }, { status: 400 });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -102,10 +93,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   try {

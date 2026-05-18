@@ -12,9 +12,10 @@ model User {
   username                String                   @unique
   password                String
   fullName                String
-  email                   String                   @unique
+  email                   String
   position                String?
   phoneNumber             String?
+  signatureUrl            String?
   isActive                Boolean                  @default(true)
   roleId                  Int
   departmentId            Int?
@@ -235,6 +236,7 @@ model ApprovalHistory {
   request           ITRequestF07 @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@index([requestId, approvalLevel])
+  @@index([approverId, actionType])
 }
 
 model Notification {

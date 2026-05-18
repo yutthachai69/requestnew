@@ -1,6 +1,5 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
@@ -20,14 +19,13 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
 
-  const userId = (session.user as { id?: string }).id;
-  const roleName = (session.user as { roleName?: string }).roleName;
+  const userId = String(auth.id);
+  const roleName = auth.roleName;
 
   try {
     const req = await prisma.iTRequestF07.findUnique({

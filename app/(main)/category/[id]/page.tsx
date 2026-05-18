@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { requesterRoles } from '@/lib/auth-constants';
+import { useCategories } from '@/app/context/CategoryContext';
+import CategoryLineChart, { TrendData } from '@/app/components/CategoryLineChart';
 
 type ReqRow = {
   id: number;
@@ -19,8 +21,6 @@ type ReqRow = {
   category: { id: number; name: string };
   requester: { id: number; fullName: string; username: string };
 };
-
-type CategoryInfo = { CategoryID: number; CategoryName: string };
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'รอดำเนินการ',
@@ -59,12 +59,14 @@ export default function CategoryRequestsPage() {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const categoryId = params?.id ? String(params.id) : '';
-  const [category, setCategory] = useState<CategoryInfo | null>(null);
-  const [categories, setCategories] = useState<CategoryInfo[]>([]);
+  const { categories, loading: categoriesLoading } = useCategories();
+  const category =
+    categories.find((c) => c.CategoryID === Number(categoryId)) ?? null;
   const [requests, setRequests] = useState<ReqRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0); // 0 = คำร้องของฉัน (ไม่เสร็จ), 1 = รายการที่เสร็จแล้ว
+  const [trendData, setTrendData] = useState<TrendData[]>([]);
+  const [trendLoading, setTrendLoading] = useState(true);
 
   const isCompletedTab = tabIndex === 1;
   const roleName = (session?.user as { roleName?: string })?.roleName;
@@ -75,23 +77,6 @@ export default function CategoryRequestsPage() {
     if (sessionStatus === 'unauthenticated') router.replace('/login');
   }, [sessionStatus, router]);
 
-  const fetchCategories = useCallback(() => {
-    setCategoriesLoading(true);
-    fetch('/api/master/categories', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list: { CategoryID: number; CategoryName: string }[]) => {
-        setCategories(Array.isArray(list) ? list : []);
-        const c = (Array.isArray(list) ? list : []).find((x) => x.CategoryID === Number(categoryId));
-        setCategory(c ?? null);
-      })
-      .catch(() => setCategories([]))
-      .finally(() => setCategoriesLoading(false));
-  }, [categoryId]);
-
-  useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
-
   useEffect(() => {
     if (!categoryId) return;
     setLoading(true);
@@ -100,33 +85,101 @@ export default function CategoryRequestsPage() {
     params.set('page', '1');
     params.set('limit', '50');
     if (isCompletedTab) params.set('status', 'CLOSED');
+    else params.set('excludeStatus', 'CLOSED');
     fetch(`/api/requests?${params}`, { credentials: 'same-origin' })
       .then((res) => (res.ok ? res.json() : { requests: [] }))
       .then((data) => {
-        let list = data.requests ?? [];
-        if (!isCompletedTab) list = list.filter((r: ReqRow) => r.status !== 'CLOSED');
-        setRequests(list);
+        setRequests(data.requests ?? []);
       })
       .catch(() => setRequests([]))
       .finally(() => setLoading(false));
   }, [categoryId, isCompletedTab]);
 
-  const handleExportExcel = () => {
-    const headers = ['เลขที่เอกสาร', 'รายละเอียด', 'ชื่อผู้ขอ', 'วันที่', 'สถานะ'];
-    const rows = requests.map((r) => [
-      r.workOrderNo ?? `#${r.id}`,
-      r.problemDetail,
-      r.requester?.fullName ?? '',
-      new Date(r.createdAt).toLocaleDateString('th-TH'),
-      r.status === 'CLOSED' ? 'เสร็จสิ้น' : r.status === 'PENDING' ? `รอขั้นที่ ${r.currentApprovalStep}` : r.status,
-    ]);
-    const csv = [headers.join(','), ...rows.map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `คำร้อง_${category?.CategoryName ?? categoryId}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  useEffect(() => {
+    if (!categoryId) return;
+    setTrendLoading(true);
+    fetch(`/api/category/${categoryId}/statistics`, { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : { trend: [] }))
+      .then((data) => setTrendData(data.trend ?? []))
+      .catch(() => setTrendData([]))
+      .finally(() => setTrendLoading(false));
+  }, [categoryId]);
+
+  const handleExportExcel = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = (await import('file-saver')).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Category Report');
+
+      worksheet.columns = [
+        { header: 'เลขที่เอกสาร', key: 'workOrderNo', width: 20 },
+        { header: 'รายละเอียด', key: 'problemDetail', width: 50 },
+        { header: 'ชื่อผู้ขอ', key: 'requester', width: 30 },
+        { header: 'วันที่', key: 'date', width: 20 },
+        { header: 'สถานะ', key: 'status', width: 20 },
+      ];
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const STATUS_THAI: Record<string, string> = {
+        PENDING: 'รอดำเนินการ',
+        WAITING_ACCOUNT_1: 'รอนำส่งบัญชีตรวจสอบ',
+        WAITING_FINAL_APP: 'รอผู้อนุมัติสูงสุด',
+        IT_WORKING: 'รอ IT ดำเนินการ',
+        WAITING_ACCOUNT_2: 'รอตรวจสอบหลังแก้ไข',
+        WAITING_IT_CLOSE: 'รอ IT ปิดงาน',
+        CLOSED: 'ปิดงานเรียบร้อย',
+        REJECTED: 'ถูกปฏิเสธ',
+        REVISION: 'ส่งกลับแก้ไข',
+      };
+
+      const STATUS_COLOR: Record<string, string> = {
+        PENDING: 'FFF59E0B',
+        WAITING_ACCOUNT_1: 'FF3B82F6',
+        WAITING_FINAL_APP: 'FF8B5CF6',
+        IT_WORKING: 'FFEC4899',
+        WAITING_ACCOUNT_2: 'FF14B8A6',
+        WAITING_IT_CLOSE: 'FF64748B',
+        CLOSED: 'FF10B981',
+        REJECTED: 'FFEF4444',
+        REVISION: 'FFF97316',
+      };
+
+      requests.forEach((r) => {
+        let displayStatus = STATUS_THAI[r.status] || r.status;
+        if (r.status === 'PENDING' && r.currentApprovalStep) {
+           displayStatus = `รอขั้นที่ ${r.currentApprovalStep}`;
+        }
+
+        const row = worksheet.addRow({
+          workOrderNo: r.workOrderNo ?? `#${r.id}`,
+          problemDetail: r.problemDetail,
+          requester: r.requester?.fullName ?? '',
+          date: new Date(r.createdAt).toLocaleDateString('th-TH'),
+          status: displayStatus,
+        });
+        row.getCell('problemDetail').alignment = { wrapText: true, vertical: 'top' };
+        row.getCell('workOrderNo').alignment = { vertical: 'top' };
+        row.getCell('requester').alignment = { vertical: 'top' };
+        row.getCell('date').alignment = { vertical: 'top', horizontal: 'center' };
+        
+        const statusCell = row.getCell('status');
+        statusCell.alignment = { vertical: 'top' };
+        statusCell.font = { color: { argb: STATUS_COLOR[r.status] || 'FF000000' }, bold: true };
+      });
+
+      const fileName = `คำร้อง_${category?.CategoryName ?? categoryId}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, fileName);
+    } catch (error) {
+      console.error('Export Excel Error:', error);
+      alert('เกิดข้อผิดพลาดในการส่งออกไฟล์ Excel');
+    }
   };
 
   if (sessionStatus === 'loading' || !session?.user) {
@@ -163,7 +216,12 @@ export default function CategoryRequestsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-bold text-gray-900 mb-6">{canSubmitRequest ? 'คำร้องของคุณ' : 'รายการคำร้อง'}</h1>
+      <h1 className="text-xl font-bold text-gray-900 mb-6">{category?.CategoryName ?? (canSubmitRequest ? 'คำร้องของคุณ' : 'รายการคำร้อง')}</h1>
+
+      {/* Historical Trend Line Chart */}
+      {!trendLoading && trendData.length > 0 && (
+        <CategoryLineChart data={trendData} />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div className="flex border-b border-gray-200">

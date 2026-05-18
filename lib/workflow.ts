@@ -153,17 +153,46 @@ export async function getFirstApproverForCategoryFromTransitions(
   return approvers[0] ?? null;
 }
 
-/** หารายชื่อผู้อนุมัติขั้นถัดไป หลังจากคำร้องเปลี่ยนไปอยู่ที่ currentStatusId (สำหรับส่งเมล) */
+/** หารายชื่อผู้อนุมัติขั้นถัดไป หลังจากคำร้องเปลี่ยนไปอยู่ที่ currentStatusId (สำหรับส่งเมล/แจ้งเตือน) */
 export async function getNextApproversForStatus(
   categoryId: number,
   currentStatusId: number,
   departmentId?: number,
-  correctionTypeId?: number | null
+  correctionTypeId?: number | null,
+  correctionTypeIds?: number[]
 ): Promise<{ id: number; username: string; email: string; fullName: string }[]> {
-  const transitions = await findTransitionsByStatus(categoryId, currentStatusId, correctionTypeId);
-  const first = transitions.find((t) => t.action.actionName === 'APPROVE') ?? transitions.find((t) => t.action.actionName === 'IT_PROCESS') ?? transitions[0];
-  if (!first) return [];
-  return getApproversForTransition(first, departmentId);
+  const ids =
+    correctionTypeIds?.length
+      ? correctionTypeIds
+      : correctionTypeId != null
+        ? [correctionTypeId]
+        : [];
+
+  const transitions = await findPossibleTransitions({
+    categoryId,
+    currentStatusId,
+    correctionTypeIds: ids.length > 0 ? ids : undefined,
+  });
+
+  const actionable = transitions.filter((t) => t.action.actionName !== 'REJECT');
+  if (actionable.length === 0) return [];
+
+  const byUserId = new Map<number, { id: number; username: string; email: string; fullName: string }>();
+  for (const t of actionable) {
+    const approvers = await getApproversForTransition(
+      {
+        requiredRoleId: t.requiredRoleId,
+        filterByDepartment: t.filterByDepartment,
+        categoryId: t.categoryId,
+        stepSequence: t.stepSequence,
+      },
+      departmentId
+    );
+    for (const a of approvers) {
+      if (!byUserId.has(a.id)) byUserId.set(a.id, a);
+    }
+  }
+  return [...byUserId.values()];
 }
 
 /** หาผู้อนุมัติตาม Workflow ของ category — ขั้นที่ stepSequence (1 = หัวหน้าฝ่าย, 2 = บัญชี, ...) */

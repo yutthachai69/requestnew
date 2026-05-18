@@ -12,9 +12,9 @@ export default function ApprovalButtons({ token }: { token: string }) {
     setLoading(true);
     const result = await handleApprovalAction(token, status);
     if (result.success) {
-      setMessage(`ดำเนินการ ${status === 'APPROVED' ? 'อนุมัติ' : 'ปฏิเสธ'} เรียบร้อยแล้ว`);
+      setMessage(result.message ?? `ดำเนินการ ${status === 'APPROVED' ? 'อนุมัติ' : 'ปฏิเสธ'} เรียบร้อยแล้ว`);
     } else {
-      alert('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      alert(result.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่');
       setLoading(false);
     }
   };

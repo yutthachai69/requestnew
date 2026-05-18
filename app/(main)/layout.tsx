@@ -13,17 +13,17 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Desktop Sidebar (Always visible on md+, hidden on mobile) */}
-      <div className="hidden md:block">
+      {/* Desktop Sidebar — hidden when printing */}
+      <div className="hidden md:block print:hidden">
         <AppSidebar />
       </div>
 
-      {/* Mobile Sidebar (Drawer) */}
+      {/* Mobile Sidebar — hidden when printing */}
       {isMobileOpen && (
-        <div className="relative z-50 md:hidden">
+        <div className="relative z-50 md:hidden print:hidden">
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+            className="fixed inset-0 bg-gray-900/70"
             onClick={closeMobile}
           />
 
@@ -47,8 +47,8 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area */}
-      <div className={`flex flex-col min-h-screen pl-0 ${contentPadding} transition-all duration-300 ease-in-out`}>
-        <AppHeader />
+      <div className={`flex flex-col min-h-screen pl-0 ${contentPadding}`}>
+        <div className="print:hidden"><AppHeader /></div>
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
 

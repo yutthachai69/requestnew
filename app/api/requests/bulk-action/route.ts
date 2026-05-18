@@ -1,6 +1,5 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getCanonicalRoleNamesForApprover } from '@/lib/auth-constants';
 import { getNextApproversForStatus } from '@/lib/workflow';
@@ -10,12 +9,11 @@ import { getApprovalTemplate, getRevisionEmail } from '@/lib/email-helper';
 
 /** POST /api/requests/bulk-action - ดำเนินการกลุ่ม (อนุมัติ/ปฏิเสธหลายรายการ) */
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const userId = (session.user as { id?: string }).id;
-  const userName = session.user.name ?? '';
-  const roleName = (session.user as { roleName?: string }).roleName;
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
+  const userId = String(auth.id);
+  const userName = auth.name ?? '';
+  const roleName = auth.roleName;
 
   // ─── 🔒 Security Check 1: ต้องเป็น role ที่มีสิทธิ์อนุมัติ ───
   if (!roleName || !approverRoles.includes(roleName)) {
@@ -99,6 +97,7 @@ export async function POST(request: NextRequest) {
         departmentId: true,
         requesterId: true,
         requester: { select: { email: true, fullName: true } },
+        correctionTypes: { select: { correctionTypeId: true } },
       },
     });
 
@@ -114,6 +113,7 @@ export async function POST(request: NextRequest) {
       requesterId: number | null;
       requesterEmail: string | null;
       requesterName: string | null;
+      correctionTypeIds: number[];
     }[] = [];
     const skippedRequests: string[] = [];
 
@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
         requesterId: req.requesterId,
         requesterEmail: req.requester?.email ?? null,
         requesterName: req.requester?.fullName ?? null,
+        correctionTypeIds: req.correctionTypes.map((c) => c.correctionTypeId),
       });
     }
 
@@ -209,7 +210,8 @@ export async function POST(request: NextRequest) {
               r.categoryId,
               r.nextStatusId,
               r.departmentId ?? undefined,
-              null
+              null,
+              r.correctionTypeIds
             );
             for (const approver of nextApprovers) {
               if (approver.id) {

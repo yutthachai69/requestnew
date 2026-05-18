@@ -7,9 +7,12 @@ const nextConfig: NextConfig = {
   // ปิด source map ใน dev (ลด memory และเร็วขึ้น)
   productionBrowserSourceMaps: false,
 
-  // ลด bundle size
+  // ลด bundle size และเพิ่มขีดจำกัดขนาดไฟล์อัปโหลด
   experimental: {
-    optimizePackageImports: ['recharts', 'jspdf', 'html2canvas'],
+    optimizePackageImports: ['recharts', 'jspdf', 'html2canvas', 'lucide-react', 'react-hot-toast'],
+    serverActions: {
+      bodySizeLimit: '10mb', // อัปโหลดรูปภาพรวมไม่เกิน 10MB ได้แล้ว
+    },
   },
 };
 

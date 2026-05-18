@@ -5,8 +5,10 @@ import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { getTabsForRole } from '@/lib/auth-constants';
 import { adminMenuItems } from '@/lib/admin-menu';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useSidebar } from '@/app/context/SidebarContext';
+import { useAppNotification } from '@/app/context/AppNotificationContext';
+import { useCategories } from '@/app/context/CategoryContext';
 import { createPortal } from 'react-dom';
 
 type CategoryItem = { CategoryID: number; CategoryName: string };
@@ -43,7 +45,7 @@ function Tooltip({ children, text, show }: { children: React.ReactNode; text: st
   );
 }
 
-export default function AppSidebar() {
+function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const { isCollapsed, toggleCollapse, closeMobile } = useSidebar();
@@ -52,8 +54,12 @@ export default function AppSidebar() {
   const tabs = getTabsForRole(roleName).filter((t) => t.path !== '/' && t.path !== '/welcome');
   const isAdminPath = pathname?.startsWith('/admin');
   const [adminOpen, setAdminOpen] = useState(isAdminPath);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [categoriesOpen, setCategoriesOpen] = useState(() => pathname?.startsWith('/category'));
+  const { pendingCount } = useAppNotification();
+
+  // ใช้ categories จาก CategoryContext ที่ fetch มาแล้ว — ไม่ต้อง fetch ซ้ำ
+  const { categories: categoriesFromCtx } = useCategories();
+  const categories = categoriesFromCtx.map((c) => ({ CategoryID: c.CategoryID, CategoryName: c.CategoryName }));
 
   useEffect(() => {
     if (isAdminPath) setAdminOpen(true);
@@ -61,14 +67,6 @@ export default function AppSidebar() {
   useEffect(() => {
     if (pathname?.startsWith('/category')) setCategoriesOpen(true);
   }, [pathname]);
-
-  useEffect(() => {
-    if (!session?.user) return;
-    fetch('/api/master/categories', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list: CategoryItem[]) => setCategories(Array.isArray(list) ? list : []))
-      .catch(() => setCategories([]));
-  }, [session]);
 
   // Close mobile menu when navigating
   useEffect(() => {
@@ -79,7 +77,7 @@ export default function AppSidebar() {
   const showText = !isCollapsed;
 
   return (
-    <aside className={`print:hidden fixed left-0 top-0 z-40 h-screen ${sidebarWidth} bg-white border-r border-gray-100 shadow-2xl shadow-gray-200/50 flex flex-col transition-all duration-300 ease-in-out`}>
+    <aside className={`print:hidden fixed left-0 top-0 z-40 h-screen ${sidebarWidth} bg-white border-r border-gray-100 shadow-2xl shadow-gray-200/50 flex flex-col transition-[width] duration-200 ease-out`}>
       {/* Header Section */}
       <div className={`relative py-4 ${isCollapsed ? 'px-2' : 'px-4'} border-b border-gray-100 bg-gradient-to-b from-blue-50/40 to-white flex flex-col items-center justify-center min-h-[88px]`}>
         <Link href="/dashboard" className="flex flex-col items-center group w-full" onClick={closeMobile}>
@@ -229,7 +227,12 @@ export default function AppSidebar() {
                       <svg className={`w-5 h-5 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
-                      {showText && <span>{tab.label}</span>}
+                      {showText && <span className="flex-1 text-left">{tab.label}</span>}
+                      {tab.path === '/pending-tasks' && pendingCount > 0 && (
+                        <span className={`flex h-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white px-1.5 min-w-[20px] ${isCollapsed ? 'absolute -top-1 -right-1 ring-2 ring-white' : ''}`}>
+                          {pendingCount > 99 ? '99+' : pendingCount}
+                        </span>
+                      )}
                     </Link>
                   </Tooltip>
                 );
@@ -263,7 +266,12 @@ export default function AppSidebar() {
                         {tab.path === '/profile' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />}
                         {!['/dashboard', '/pending-tasks', '/request/new', '/report', '/profile'].includes(tab.path) && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
                       </svg>
-                      {showText && <span>{tab.label}</span>}
+                      {showText && <span className="flex-1 text-left">{tab.label}</span>}
+                      {tab.path === '/pending-tasks' && pendingCount > 0 && (
+                        <span className={`flex h-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white px-1.5 min-w-[20px] ${isCollapsed ? 'absolute -top-1 -right-1 ring-2 ring-white' : ''}`}>
+                          {pendingCount > 99 ? '99+' : pendingCount}
+                        </span>
+                      )}
                     </Link>
                   </Tooltip>
                 );
@@ -406,3 +414,5 @@ export default function AppSidebar() {
     </aside>
   );
 }
+
+export default memo(AppSidebar);

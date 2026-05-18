@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { approverRoles } from '@/lib/auth-constants';
 import { useNotification } from '@/app/context/NotificationContext';
+import { useAppNotification } from '@/app/context/AppNotificationContext';
 
 type PendingItem = {
   id: number;
@@ -27,6 +28,7 @@ export default function PendingTasksPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const { showNotification } = useNotification();
+  const { refresh } = useAppNotification();
   const [requests, setRequests] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -65,8 +67,9 @@ export default function PendingTasksPage() {
     }
     if (session?.user) {
       fetchRequests();
+      void refresh();
     }
-  }, [session, sessionStatus, router]);
+  }, [session, sessionStatus, router, refresh]);
 
   // Client-side fallback: redirect ถ้า Role ไม่มีสิทธิ์
   useEffect(() => {
@@ -122,6 +125,7 @@ export default function PendingTasksPage() {
       setBulkDialog({ open: false, action: 'APPROVE', comment: '' });
       setSelected([]);
       fetchRequests();
+      refresh();
     } catch (e) {
       showNotification(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด', 'error');
     } finally {

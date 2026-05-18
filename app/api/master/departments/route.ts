@@ -1,12 +1,11 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 /** GET /api/master/departments — รายการแผนกที่เปิดใช้งาน (สำหรับผู้ที่ไม่มีแผนกในระบบ เช่น Admin/Final Approver เลือกแผนกที่ยื่นคำร้อง) */
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
   try {
     const list = await prisma.department.findMany({
       where: { isActive: true },

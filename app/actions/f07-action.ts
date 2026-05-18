@@ -50,11 +50,25 @@ export async function submitF07(formData: FormData) {
             })
 
             if (!config) {
+                // หา prefix จากปีก่อนหน้า (ถ้ามี)
+                const lastConfig = await tx.docConfig.findFirst({
+                    where: { categoryId },
+                    orderBy: { year: 'desc' },
+                })
+                // Category code mapping (fallback)
+                const CATEGORY_CODES: Record<number, string> = {
+                    1: 'IT-F07-GN',  // ทั่วไป
+                    2: 'IT-F07-MA',  // ฝ่ายไร่
+                    3: 'IT-F07-WB',  // ห้องชั่งอ้อย
+                    4: 'IT-F07-TC',  // ศูนย์ขนถ่าย
+                    5: 'IT-F07-WH',  // คลังสินค้า
+                }
+                const prefix = lastConfig?.prefix || CATEGORY_CODES[categoryId] || 'IT-F07'
                 config = await tx.docConfig.create({
                     data: {
                         categoryId: categoryId,
                         year: currentYearBE,
-                        prefix: 'IT-F07',
+                        prefix,
                         lastRunningNumber: 0
                     }
                 })
@@ -106,7 +120,14 @@ export async function submitF07(formData: FormData) {
                             }
                         }
                         return paths.length > 0 ? JSON.stringify(paths) : null;
-                    })()
+                    })(),
+                    ...(formData.get('correctionTypeIds') && JSON.parse(formData.get('correctionTypeIds') as string).length > 0 ? {
+                        correctionTypes: {
+                            create: JSON.parse(formData.get('correctionTypeIds') as string).map((id: number) => ({
+                                correctionTypeId: id
+                            }))
+                        }
+                    } : {})
                 }
             })
         })
@@ -125,17 +146,21 @@ export async function submitF07(formData: FormData) {
                 await createNotification(approver.id, `มีใบงานใหม่รออนุมัติ: ${newRequest.workOrderNo} (${thaiName})`, newRequest.id);
             }
 
-            const { subject, body } = getApprovalTemplate(newRequest, approver.fullName);
-            await sendApprovalEmail({
+            const { subject, body } = getApprovalTemplate(newRequest, approver.fullName, {
+                approvalToken: newRequest.approvalToken,
+            });
+            const sent = await sendApprovalEmail({
                 to: [approver.email],
                 subject,
                 body,
-                senderName: thaiName, // ชื่อผู้แจ้งจากฟอร์ม
-                replyTo: session?.user?.email || undefined, // อีเมลผู้แจ้งสำหรับ Reply-To
+                senderName: thaiName,
+                replyTo: session?.user?.email || undefined,
             });
-            // Log removed
+            if (!sent.ok) {
+                console.error('[mail] ส่งเมลตอนสร้างคำร้องล้มเหลว:', sent);
+            }
         } else {
-            console.warn('⚠️ ไม่พบอีเมลผู้อนุมัติ (Workflow/หัวหน้าแผนก) ระบบข้ามการส่งเมลอัตโนมัติ');
+            console.warn('⚠️ ไม่พบผู้อนุมัติหรือไม่มีอีเมล (Workflow/หัวหน้าแผนก) — ข้ามการส่งเมล');
         }
 
         revalidatePath('/dashboard')

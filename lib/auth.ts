@@ -1,7 +1,7 @@
 import NextAuth, { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from '@/lib/prisma';
-import { hashPassword } from '@/lib/hash';
+import { hashPassword, verifyPassword } from '@/lib/hash';
 
 const secret = process.env.NEXTAUTH_SECRET;
 if (!secret && process.env.NODE_ENV !== 'test') {
@@ -28,8 +28,14 @@ export const authOptions: NextAuthOptions = {
           include: { role: true, department: true },
         });
         if (!user) return null;
-        const hashed = hashPassword(password);
-        if (user.password !== hashed) return null;
+        const check = verifyPassword(password, user.password);
+        if (!check.ok) return null;
+        if (check.needsUpgrade) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashPassword(password) },
+          });
+        }
         return {
           id: String(user.id),
           name: user.fullName,

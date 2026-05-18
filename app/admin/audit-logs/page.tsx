@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNotification } from '@/app/context/NotificationContext';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
+import { ClipboardList, Search, Filter, RefreshCcw, ArrowLeft, ArrowRight, User, Calendar } from 'lucide-react';
 
 type Log = {
   LogID: number;
@@ -116,49 +117,73 @@ export default function AdminAuditLogsPage() {
   };
 
   const getActivityTagClass = (action: string) => {
-    if (!action) return 'bg-gray-100 text-gray-700';
-    if (action === 'USER_LOGIN') return 'bg-green-100 text-green-800';
-    if (action === 'LOGIN_FAILED') return 'bg-red-100 text-red-800';
-    if (action === 'REQUEST_DELETED') return 'bg-blue-100 text-blue-800';
-    if (action.includes('LOGIN')) return 'bg-green-100 text-green-800';
-    if (action.includes('FAILED') || action.includes('REJECT')) return 'bg-red-100 text-red-800';
-    return 'bg-gray-100 text-gray-700';
+    if (!action) return 'bg-gray-100 text-gray-700 border-gray-200';
+    if (action === 'USER_LOGIN' || action.includes('LOGIN')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    if (action === 'LOGIN_FAILED' || action.includes('FAILED') || action.includes('REJECT')) return 'bg-rose-50 text-rose-700 border-rose-200';
+    if (action === 'REQUEST_DELETED') return 'bg-slate-50 text-slate-700 border-slate-200';
+    if (action === 'APPROVE') return 'bg-blue-50 text-blue-700 border-blue-200';
+    if (action === 'CREATE') return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    if (action === 'UPDATE') return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-gray-50 text-gray-700 border-gray-200';
   };
 
   return (
-    <div className="w-full">
-      <h1 className="text-2xl font-bold text-gray-900 mb-4">ประวัติการใช้งาน (Audit Log)</h1>
-
-      <div className="mb-4 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50/50 p-4 sm:p-6 lg:p-8 space-y-6 font-sans">
+      {/* Header Card */}
+      <div className="bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+               <ClipboardList size={24} />
+            </div>
+            ประวัติการใช้งานระบบ (Audit Logs)
+          </h1>
+          <p className="text-gray-500 mt-2 text-sm">
+            ติดตามกิจกรรมของผู้ใช้งานและการเข้าสู่ระบบทั้งหมด
+          </p>
+        </div>
+        
         <button
           type="button"
           onClick={() => setFilterVisible((v) => !v)}
-          className="text-sm text-gray-600 hover:text-gray-900"
+          className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-colors border ${
+            filterVisible 
+              ? 'bg-blue-50 text-blue-700 border-blue-200' 
+              : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'
+          }`}
         >
-          {filterVisible ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
+          <Filter size={16} />
+          {filterVisible ? 'ซ่อนตัวกรอง' : 'ตัวกรองข้อมูล'}
         </button>
       </div>
 
       {filterVisible && (
-        <form onSubmit={handleSearch} className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-          <p className="text-sm font-medium text-gray-700 mb-3">ตัวกรอง</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <form onSubmit={handleSearch} className="bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">ค้นหา (ชื่อ, กิจกรรม, รายละ...)</label>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                placeholder="ค้นหา (ชื่อ, กิจกรรม, รายละ...)"
-              />
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">ค้นหากิจกรรม</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors bg-gray-50/50 hover:bg-white"
+                  placeholder="ค้นหาชื่อ, ประเภท, หรือรายละเอียด..."
+                />
+              </div>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ผู้ใช้งาน</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                 <User size={14} className="text-gray-400"/> ผู้ทำรายการ
+              </label>
               <select
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors bg-gray-50/50 hover:bg-white"
               >
                 <option value="">ทั้งหมด</option>
                 {users.map((u) => (
@@ -168,39 +193,46 @@ export default function AdminAuditLogsPage() {
                 ))}
               </select>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่เริ่มต้น</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                <Calendar size={14} className="text-gray-400"/> ตั้งแต่วันที่
+              </label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors bg-gray-50/50 hover:bg-white"
               />
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่สิ้นสุด</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                <Calendar size={14} className="text-gray-400"/> ถึงวันที่
+              </label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors bg-gray-50/50 hover:bg-white"
               />
             </div>
           </div>
-          <div className="mt-4 flex justify-end gap-2">
+          
+          <div className="mt-5 pt-5 border-t border-gray-100 flex justify-end gap-3">
             <button
               type="button"
               onClick={handleClearFilters}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium"
+              className="px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-900 text-gray-600 text-sm font-semibold transition-colors flex items-center gap-2"
             >
-              ล้าง
+              <RefreshCcw size={16} /> ล้างค่าใหม่
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-1"
+              className="px-5 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 hover:shadow-md hover:-translate-y-0.5 text-sm font-semibold transition-all flex items-center gap-2"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-              ค้นหา
+              <Search size={16} />
+              ค้นหาข้อมูล
             </button>
           </div>
         </form>
@@ -211,32 +243,41 @@ export default function AdminAuditLogsPage() {
           <LoadingSpinner />
         </div>
       ) : (
-        <>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">เวลา</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ผู้ใช้งาน</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">กิจกรรม</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">IP Address</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">รายละเอียด</th>
+        <div className="bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 overflow-hidden flex flex-col">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="bg-gray-50/80 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
+                  <th className="px-6 py-4">เวลา</th>
+                  <th className="px-6 py-4">ผู้ใช้งาน</th>
+                  <th className="px-6 py-4">กิจกรรม</th>
+                  <th className="px-6 py-4">IP Address</th>
+                  <th className="px-6 py-4">รายละเอียด</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-50">
                 {logs.map((log) => (
-                  <tr key={log.LogID} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                  <tr key={log.LogID} className="group hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-4 text-sm text-gray-500 font-medium whitespace-nowrap">
                       {formatTimestamp(log.Timestamp)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{log.FullName || log.Username || 'Guest'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getActivityTagClass(log.Action ?? '')}`}>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
+                           {(log.FullName || log.Username || 'G')[0].toUpperCase()}
+                         </div>
+                         <span className="text-sm font-semibold text-gray-900">{log.FullName || log.Username || 'Guest'}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex px-3 py-1 text-xs font-bold rounded-full border shadow-sm ${getActivityTagClass(log.Action ?? '')}`}>
                         {log.Action || '-'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{log.IPAddress || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 max-w-md truncate" title={log.Detail ?? ''}>
+                    <td className="px-6 py-4 text-sm font-mono text-gray-500 bg-gray-50/50 group-hover:bg-transparent transition-colors">
+                        {log.IPAddress || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 max-w-md truncate" title={log.Detail ?? ''}>
                       {log.Detail || '-'}
                     </td>
                   </tr>
@@ -244,34 +285,42 @@ export default function AdminAuditLogsPage() {
               </tbody>
             </table>
             {logs.length === 0 && (
-              <div className="py-12 text-center text-gray-500">ไม่พบข้อมูลประวัติ</div>
+              <div className="py-16 flex flex-col items-center justify-center text-center">
+                 <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                   <ClipboardList className="w-8 h-8 text-gray-300" />
+                 </div>
+                 <h3 className="text-lg font-bold text-gray-900 mb-1">ไม่พบข้อมูลประวัติ</h3>
+                 <p className="text-gray-500 text-sm">ลองปรับตัวกรองหรือค้นหาด้วยคำใหม่อีกครั้ง</p>
+              </div>
             )}
           </div>
 
           {pagination.totalPages > 1 && (
-            <div className="flex justify-center items-center gap-2 mt-4">
-              <button
-                type="button"
-                disabled={pagination.currentPage <= 1}
-                onClick={() => setPagination((p) => ({ ...p, currentPage: p.currentPage - 1 }))}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 text-sm"
-              >
-                ก่อนหน้า
-              </button>
-              <span className="text-sm text-gray-600">
-                หน้า {pagination.currentPage} / {pagination.totalPages} (ทั้งหมด {pagination.totalCount} รายการ)
+            <div className="border-t border-gray-100 p-4 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <span className="text-sm font-medium text-gray-500">
+                แสดงหน้า <span className="text-gray-900">{pagination.currentPage}</span> จาก <span className="text-gray-900">{pagination.totalPages}</span> (ทั้งหมด {pagination.totalCount} รายการ)
               </span>
-              <button
-                type="button"
-                disabled={pagination.currentPage >= pagination.totalPages}
-                onClick={() => setPagination((p) => ({ ...p, currentPage: p.currentPage + 1 }))}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 text-sm"
-              >
-                ถัดไป
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={pagination.currentPage <= 1}
+                  onClick={() => setPagination((p) => ({ ...p, currentPage: p.currentPage - 1 }))}
+                  className="p-2 border border-gray-300 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white bg-gray-50 text-gray-700 transition-colors shadow-sm"
+                >
+                  <ArrowLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={pagination.currentPage >= pagination.totalPages}
+                  onClick={() => setPagination((p) => ({ ...p, currentPage: p.currentPage + 1 }))}
+                  className="p-2 border border-gray-300 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white bg-gray-50 text-gray-700 transition-colors shadow-sm"
+                >
+                  <ArrowRight size={16} />
+                </button>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,5 @@
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getUserRoleNamesForWorkflowRole } from '@/lib/auth-constants';
 import { findPossibleTransitions } from '@/lib/workflow';
@@ -12,14 +11,13 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
 
-  const userId = (session.user as { id?: string }).id;
-  const roleName = (session.user as { roleName?: string }).roleName;
+  const userId = String(auth.id);
+  const roleName = auth.roleName;
 
   try {
     const request = await prisma.iTRequestF07.findUnique({
@@ -29,7 +27,7 @@ export async function GET(
         category: true,
         location: true,
         currentStatus: { select: { id: true, code: true, displayName: true, colorCode: true } },
-        requester: { select: { id: true, fullName: true, username: true, email: true, position: true } },
+        requester: { select: { id: true, fullName: true, username: true, email: true, position: true, signatureUrl: true } },
         correctionTypes: { select: { correctionTypeId: true } },
       },
     });
@@ -50,6 +48,7 @@ export async function GET(
         user: {
           select: {
             fullName: true,
+            signatureUrl: true,
             role: { select: { roleName: true } }
           }
         }
@@ -67,6 +66,7 @@ export async function GET(
       ActionType: actionTypeLabel[log.action] ?? log.action,
       Comment: log.detail ?? null,
       ApprovalTimestamp: log.timestamp,
+      SignatureUrl: log.user?.signatureUrl ?? null,
     }));
     const lastITProcess = [...(historyLogs as any[])].reverse().find((l) => l.action === 'IT_PROCESS');
     const resolvedBy = lastITProcess?.user?.fullName ?? null;
@@ -88,7 +88,6 @@ export async function GET(
     const approvedByITViewer = lastITViewerLog?.user?.fullName ?? null;
 
     const currentStatusId = request.currentStatusId ?? 1;
-    const currentStep = (request as { currentApprovalStep?: number }).currentApprovalStep ?? 1;
     const correctionTypeIds = (request as { correctionTypes?: { correctionTypeId: number }[] }).correctionTypes?.map((r) => r.correctionTypeId) ?? [];
     let transitions = await findPossibleTransitions({
       categoryId: request.categoryId,
@@ -118,10 +117,7 @@ export async function GET(
       });
     }
 
-    let possibleActions = getPossibleActionsFromTransitions(transitions, roleName ?? undefined);
-    if (possibleActions.length === 0 && request.status === 'PENDING') {
-      possibleActions = await getPossibleActionsFromStep(currentStep, request.categoryId, roleName ?? undefined);
-    }
+    const possibleActions = getPossibleActionsFromTransitions(transitions, roleName ?? undefined);
 
     return NextResponse.json({
       request: {
@@ -165,13 +161,12 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
 
-  const userId = (session.user as { id?: string }).id;
+  const userId = String(auth.id);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
@@ -329,42 +324,17 @@ function getPossibleActionsFromTransitions(
     .map((t) => ({ ActionName: t.action.actionName, ActionDisplayName: t.action.displayName }));
 }
 
-/** Fallback: possibleActions จาก WorkflowStep (เมื่อหมวดไม่มี WorkflowTransitions) — Admin ไม่มีขั้นตอนอนุมัติ */
-async function getPossibleActionsFromStep(
-  currentStep: number,
-  categoryId: number,
-  roleName: string | undefined
-): Promise<{ ActionName: string; ActionDisplayName: string }[]> {
-  const base = [
-    { ActionName: 'APPROVE', ActionDisplayName: 'อนุมัติ' },
-    { ActionName: 'REJECT', ActionDisplayName: 'ส่งกลับ/ปฏิเสธ' },
-  ];
-  if (roleName === 'Admin') return [];
-  if (!roleName) return [];
-  const step = await prisma.workflowStep.findFirst({
-    where: { categoryId, stepSequence: currentStep },
-    select: { approverRoleName: true },
-  });
-  if (step?.approverRoleName) {
-    const allowedUserRoles = getUserRoleNamesForWorkflowRole(step.approverRoleName);
-    if (roleName && allowedUserRoles.includes(roleName)) return base;
-  }
-  if (!step && ['Head of Department', 'Manager', 'หน.แผนก', 'หัวหน้าแผนก', 'User'].includes(roleName)) return base;
-  return [];
-}
-
 /** DELETE /api/requests/[id] - ลบคำร้อง (Admin เท่านั้น ลบได้ทุกสถานะ) */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+  const auth = await requireAuth();
+  if (isAuthError(auth)) return auth;
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
 
-  const roleName = (session.user as { roleName?: string }).roleName;
+  const roleName = auth.roleName;
 
   if (roleName !== 'Admin') {
     return NextResponse.json({ error: 'Forbidden: Only Admin can delete' }, { status: 403 });
@@ -374,7 +344,7 @@ export async function DELETE(
     await prisma.auditLog.create({
       data: {
         action: 'DELETE_REQUEST',
-        userId: (session.user as any).id ? Number((session.user as any).id) : null,
+        userId: auth.id,
         detail: `Deleted Request ID ${id} by Admin`,
         requestId: null,
       },

@@ -339,72 +339,79 @@ export default function AdminUsersPage() {
 
       {/* Dialog สร้าง/แก้ไข */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto py-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 my-auto">
-            <h2 className="text-lg font-bold mb-6">{current ? 'แก้ไขผู้ใช้' : 'สร้างผู้ใช้ใหม่'}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity"
+            onClick={() => setOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 md:p-8 transform transition-all">
+            <h2 className="text-xl font-bold mb-6 text-gray-900">{current ? 'แก้ไขผู้ใช้' : 'สร้างผู้ใช้ใหม่'}</h2>
 
             {/* ข้อมูลผู้ใช้ */}
-            <section className="mb-6">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-gray-600">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            <section className="mb-8">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                 </span>
-                <h3 className="font-semibold text-gray-900">ข้อมูลผู้ใช้</h3>
-              </div>
-              <p className="text-sm text-gray-500 mb-4">กรอกข้อมูลส่วนตัวและข้อมูลเข้าระบบ</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username <span className="text-red-500">*</span></label>
+                  <h3 className="font-semibold text-gray-900">ข้อมูลผู้ใช้</h3>
+                  <p className="text-xs text-gray-500">กรอกข้อมูลส่วนตัวและข้อมูลเข้าระบบ</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Username <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formUsername}
                     onChange={(e) => setFormUsername(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none disabled:bg-gray-50 disabled:text-gray-500"
                     placeholder="username"
                     disabled={!!current}
                   />
-                  {current && <p className="text-xs text-gray-500 mt-0.5">ไม่สามารถเปลี่ยนชื่อผู้ใช้ได้</p>}
+                  {current && <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>ไม่สามารถเปลี่ยนชื่อผู้ใช้ได้</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    รหัสผ่าน {current ? '(เว้นว่างถ้าไม่เปลี่ยน)' : <span className="text-red-500">*</span>}
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    รหัสผ่าน {current ? <span className="text-gray-400 font-normal">(เว้นว่างถ้าไม่เปลี่ยน)</span> : <span className="text-red-500">*</span>}
                   </label>
                   <input
                     type="password"
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                     placeholder={current ? 'เว้นว่าง = ไม่เปลี่ยน' : 'อย่างน้อย 6 ตัวอักษร'}
                   />
-                  {!current && <p className="text-xs text-gray-500 mt-0.5">ต้องมีอย่างน้อย 6 ตัวอักษร</p>}
+                  {!current && <p className="text-xs text-gray-500 mt-1.5">ต้องมีอย่างน้อย 6 ตัวอักษร</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={formFullName}
                     onChange={(e) => setFormFullName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                     placeholder="ชื่อ-นามสกุล"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">อีเมล</label>
                   <input
                     type="email"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                     placeholder="email@company.local"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     แผนก
                     {(() => {
                       const sel = roles.find((r) => r.RoleID === formRoleId);
                       if (sel && ['Admin', 'Final Approver'].includes(sel.RoleName)) {
-                        return <span className="text-gray-500 font-normal ml-1">(ไม่บังคับสำหรับ Admin / ผู้อนุมัติขั้นสุดท้าย)</span>;
+                        return <span className="text-gray-400 font-normal ml-1">(ไม่บังคับสำหรับสิทธิ์นี้)</span>;
                       }
                       return null;
                     })()}
@@ -412,9 +419,9 @@ export default function AdminUsersPage() {
                   <select
                     value={formDepartmentId === '' ? '' : formDepartmentId}
                     onChange={(e) => setFormDepartmentId(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-no-repeat bg-[position:right_1rem_center]"
                   >
-                    <option value="">-- เลือก --</option>
+                    <option value="">-- เลือกแผนก --</option>
                     {departments.filter((d) => d.IsActive).map((d) => (
                       <option key={d.DepartmentID} value={d.DepartmentID}>
                         {d.DepartmentName}
@@ -423,33 +430,33 @@ export default function AdminUsersPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ตำแหน่ง</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">ตำแหน่ง</label>
                   <input
                     type="text"
                     value={formPosition}
                     onChange={(e) => setFormPosition(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="ตำแหน่ง"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                    placeholder="ระบุตำแหน่งงาน"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เบอร์โทรศัพท์</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">เบอร์โทรศัพท์</label>
                   <input
                     type="text"
                     value={formPhone}
                     onChange={(e) => setFormPhone(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                     placeholder="เบอร์โทรศัพท์"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">บทบาท (Role) <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">บทบาท (Role) <span className="text-red-500">*</span></label>
                   <select
                     value={formRoleId === '' ? '' : formRoleId}
                     onChange={(e) => setFormRoleId(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-no-repeat bg-[position:right_1rem_center]"
                   >
-                    <option value="">-- เลือก --</option>
+                    <option value="">-- เลือกบทบาท --</option>
                     {roles.map((r) => (
                       <option key={r.RoleID} value={r.RoleID}>
                         {r.RoleName}
@@ -458,30 +465,43 @@ export default function AdminUsersPage() {
                   </select>
                 </div>
               </div>
+
               {current && (
-                <label className="flex items-center gap-2 mt-4">
-                  <input
-                    type="checkbox"
-                    checked={formActive}
-                    onChange={(e) => setFormActive(e.target.checked)}
-                  />
-                  <span className="text-sm">เปิดใช้งาน</span>
-                </label>
+                <div className="mt-5 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={formActive}
+                        onChange={(e) => setFormActive(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none ring-0 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">เปิดใช้งานบัญชีนี้</span>
+                      <p className="text-xs text-gray-500">หากปิด บัญชีจะไม่สามารถล็อกอินได้</p>
+                    </div>
+                  </label>
+                </div>
               )}
             </section>
 
             {/* สิทธิ์การเข้าถึงหมวดหมู่ */}
-            <section className="mb-6">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-gray-600">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+            <section className="mb-8">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                 </span>
-                <h3 className="font-semibold text-gray-900">สิทธิ์การเข้าถึงหมวดหมู่</h3>
+                <div>
+                  <h3 className="font-semibold text-gray-900">สิทธิ์การเข้าถึงหมวดหมู่</h3>
+                  <p className="text-xs text-gray-500">กำหนดหมวดหมู่ที่ผู้ใช้นี้สามารถมองเห็น/สร้างคำร้องได้</p>
+                </div>
               </div>
-              <p className="text-sm text-gray-500 mb-3">กำหนดว่าผู้ใช้นี้จะสามารถสร้าง/เห็นคำร้องในหมวดหมู่ใดได้บ้าง</p>
-              <div className="flex flex-wrap gap-x-6 gap-y-2 border border-gray-200 rounded-lg p-3 bg-gray-50/50">
+
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {categories.map((c) => (
-                  <label key={c.CategoryID} className="flex items-center gap-2 cursor-pointer">
+                  <label key={c.CategoryID} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${formCategoryIds.includes(c.CategoryID) ? 'border-purple-500 bg-purple-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
                     <input
                       type="checkbox"
                       checked={formCategoryIds.includes(c.CategoryID)}
@@ -489,30 +509,30 @@ export default function AdminUsersPage() {
                         if (e.target.checked) setFormCategoryIds((prev) => [...prev, c.CategoryID]);
                         else setFormCategoryIds((prev) => prev.filter((id) => id !== c.CategoryID));
                       }}
-                      className="rounded border-gray-300"
+                      className="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
                     />
-                    <span className="text-sm">{c.CategoryName}</span>
+                    <span className={`text-sm ${formCategoryIds.includes(c.CategoryID) ? 'font-medium text-purple-900' : 'text-gray-700'}`}>{c.CategoryName}</span>
                   </label>
                 ))}
-                {categories.length === 0 && <span className="text-sm text-gray-400">ไม่มีหมวดหมู่</span>}
+                {categories.length === 0 && <span className="text-sm text-gray-400 p-3">ไม่มีหมวดหมู่ในระบบ</span>}
               </div>
             </section>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-6 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-colors w-full sm:w-auto"
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
                 onClick={handleSave}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium focus:ring-4 focus:ring-blue-100 flex items-center justify-center gap-2 transition-all shadow-sm w-full sm:w-auto"
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                บันทึกผู้ใช้
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                บันทึกข้อมูล
               </button>
             </div>
           </div>

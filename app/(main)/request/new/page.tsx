@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { submitF07 } from '@/app/actions/f07-action';
 import { requesterRoles } from '@/lib/auth-constants';
+import { useCategories } from '@/app/context/CategoryContext';
 
 type CategoryItem = { CategoryID: number; CategoryName: string; locations?: { id: number; name: string }[] };
 type CorrectionTypeItem = {
@@ -98,7 +99,7 @@ export default function NewRequestPage() {
   }, [sessionStatus, session?.user, router]);
 
   const [step, setStep] = useState(1);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const { categories } = useCategories();
   const [userMe, setUserMe] = useState<UserMe | null>(null);
   const [correctionTypes, setCorrectionTypes] = useState<CorrectionTypeItem[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
@@ -116,6 +117,7 @@ export default function NewRequestPage() {
   const [submitError, setSubmitError] = useState('');
   const [requestDepartmentId, setRequestDepartmentId] = useState<number | ''>('');
   const [departments, setDepartments] = useState<{ DepartmentID: number; DepartmentName: string }[]>([]);
+  const [showLimitPopup, setShowLimitPopup] = useState(false);
 
   const currentCategory = categories.find((c) => String(c.CategoryID) === categoryId);
   const locations = currentCategory?.locations ?? [];
@@ -125,20 +127,13 @@ export default function NewRequestPage() {
   const fieldConfigs = selectedTypeForTab ? parseFieldsConfig(selectedTypeForTab.FieldsConfig) : [];
 
   useEffect(() => {
-    fetch('/api/master/categories', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list: CategoryItem[]) => setCategories(Array.isArray(list) ? list : []))
-      .catch(() => setCategories([]));
-  }, []);
-
-  useEffect(() => {
     fetch('/api/me', { credentials: 'same-origin' })
       .then(async (r) => {
         if (r.ok) return r.json();
         if (r.status === 401) (await import('next-auth/react')).signOut({ callbackUrl: '/login' });
         return null;
       })
-      .then(setUserMe)
+      .then((data) => setUserMe(data ? data.user : null))
       .catch(() => setUserMe(null));
   }, []);
 
@@ -182,6 +177,10 @@ export default function NewRequestPage() {
 
   const handleTypeChange = (typeId: number, checked: boolean) => {
     if (checked) {
+      if (selectedTypeIds.length >= 2) {
+        setShowLimitPopup(true);
+        return;
+      }
       setSelectedTypeIds((prev) => [...prev, typeId]);
       setDynamicFieldValues((prev) => ({ ...prev, [typeId]: {} }));
     } else {
@@ -306,12 +305,12 @@ export default function NewRequestPage() {
         <div className="space-y-6">
           <h2 className="text-lg font-semibold text-gray-900">1. ข้อมูลทั่วไป</h2>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">หมวดหมู่ *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">หมวดหมู่ <span className="text-red-500">*</span></label>
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
               required
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-no-repeat bg-[position:right_1.25rem_center]"
             >
               <option value="">-- เลือกหมวดหมู่ --</option>
               {categories.map((c) => (
@@ -322,13 +321,13 @@ export default function NewRequestPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">สถานที่/ศูนย์ขนถ่าย *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">สถานที่/ศูนย์ขนถ่าย <span className="text-red-500">*</span></label>
             <select
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
               required
               disabled={!locations.length}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+              className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-no-repeat bg-[position:right_1.25rem_center] disabled:bg-gray-50 disabled:text-gray-500"
             >
               <option value="">-- เลือกสถานที่ --</option>
               {locations.map((l) => (
@@ -340,13 +339,13 @@ export default function NewRequestPage() {
           </div>
           {userMe?.departmentId == null && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">แผนกที่ยื่นคำร้อง *</label>
-              <p className="text-xs text-gray-500 mb-1">(ผู้ใช้ไม่มีแผนกในระบบ — กรุณาเลือกแผนกสำหรับคำร้องนี้)</p>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">แผนกที่ยื่นคำร้อง <span className="text-red-500">*</span></label>
+              <p className="text-xs text-gray-500 mb-2">(ผู้ใช้ไม่มีแผนกในระบบ — กรุณาเลือกแผนกสำหรับคำร้องนี้)</p>
               <select
                 value={requestDepartmentId === '' ? '' : requestDepartmentId}
                 onChange={(e) => setRequestDepartmentId(e.target.value === '' ? '' : Number(e.target.value))}
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none bg-white appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:10px_10px] bg-no-repeat bg-[position:right_1.25rem_center]"
               >
                 <option value="">-- เลือกแผนก --</option>
                 {departments.map((d) => (
@@ -358,7 +357,7 @@ export default function NewRequestPage() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผลการแก้ไข *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">เหตุผลการแก้ไข <span className="text-red-500">*</span></label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -366,9 +365,9 @@ export default function NewRequestPage() {
               rows={3}
               maxLength={200}
               placeholder="กรุณากรอกเหตุผลในการแก้ไขให้ชัดเจน"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
             />
-            <p className={`text-xs mt-1 text-right ${reason.length > 160 ? 'text-red-500' : 'text-gray-400'}`}>
+            <p className={`text-xs mt-1.5 text-right ${reason.length > 160 ? 'text-red-500' : 'text-gray-400'}`}>
               {reason.length}/200
             </p>
           </div>
@@ -689,6 +688,34 @@ export default function NewRequestPage() {
                 </svg>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Limit Exceeded Modal */}
+      {showLimitPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">แจ้งเตือน</h3>
+              <p className="text-gray-600">
+                เลือกประเภทการแก้ไขได้ 2 ประเภท ต่อ 1 คำร้องเท่านั้น
+              </p>
+            </div>
+            <div className="p-4 bg-gray-50 flex justify-center border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowLimitPopup(false)}
+                className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors focus:ring-4 focus:ring-blue-500/20 w-full"
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}

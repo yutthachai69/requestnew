@@ -23,23 +23,17 @@ const SidebarContext = createContext<SidebarContextType>(defaultContext);
 
 const STORAGE_KEY = 'sidebar-collapsed';
 
-export function SidebarProvider({ children }: { children: ReactNode }) {
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const [isMobileOpen, setIsMobileOpen] = useState(false);
+function readInitialCollapsed(): boolean {
+    if (typeof window === 'undefined') return false;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'true') return true;
+    if (stored === 'false') return false;
+    return window.innerWidth >= 768 && window.innerWidth < 1024;
+}
 
-    // Load from localStorage on mount
-    useEffect(() => {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored === 'true') {
-            setIsCollapsed(true);
-        } else if (stored === null) {
-            // Check if tablet size on initial load
-            const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
-            if (isTablet) {
-                setIsCollapsed(true);
-            }
-        }
-    }, []);
+export function SidebarProvider({ children }: { children: ReactNode }) {
+    const [isCollapsed, setIsCollapsed] = useState(readInitialCollapsed);
+    const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const toggleCollapse = useCallback(() => {
         setIsCollapsed((prev) => {

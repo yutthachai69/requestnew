@@ -1,20 +1,11 @@
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-
-function requireAdmin(session: unknown) {
-  const role = (session as { user?: { roleName?: string } })?.user?.roleName;
-  if (role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  return null;
-}
 
 /** GET /api/admin/audit-logs?page=1&limit=20&search=&action=&startDate=&endDate= */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   const { searchParams } = request.nextUrl;
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
   const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20));

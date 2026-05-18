@@ -1,20 +1,11 @@
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-
-function requireAdmin(session: unknown) {
-  const role = (session as { user?: { roleName?: string } })?.user?.roleName;
-  if (role !== 'Admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  return null;
-}
 
 /** GET /api/admin/correction-types - list all (Admin) */
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   try {
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
@@ -58,10 +49,8 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/admin/correction-types */
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const err = requireAdmin(session);
-  if (err) return err;
+  const auth = await requireAdmin();
+  if (isAuthError(auth)) return auth;
   try {
     const body = await request.json();
     const name = String(body.name ?? '').trim();

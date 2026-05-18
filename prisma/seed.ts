@@ -118,15 +118,15 @@ async function main() {
   // 4. Statuses (Unchanged)
   console.log('Seeding Statuses...');
   const statuses = [
-    { code: 'PENDING', displayName: 'รอหัวหน้าแผนกอนุมัติ', colorCode: '#F59E0B', displayOrder: 1, isInitialState: true },
-    { code: 'WAITING_ACCOUNT_1', displayName: 'รอนำส่งบัญชีตรวจสอบ', colorCode: '#3B82F6', displayOrder: 2, isInitialState: false },
-    { code: 'WAITING_FINAL_APP', displayName: 'รอผู้อนุมัติสูงสุด', colorCode: '#8B5CF6', displayOrder: 3, isInitialState: false },
-    { code: 'IT_WORKING', displayName: 'รอ IT ดำเนินการ', colorCode: '#6366F1', displayOrder: 4, isInitialState: false },
-    { code: 'WAITING_ACCOUNT_2', displayName: 'รอตรวจสอบหลังแก้ไข', colorCode: '#0EA5E9', displayOrder: 5, isInitialState: false },
-    { code: 'WAITING_IT_CLOSE', displayName: 'รอ IT ปิดงาน', colorCode: '#06B6D4', displayOrder: 6, isInitialState: false },
-    { code: 'CLOSED', displayName: 'ปิดงานเรียบร้อย', colorCode: '#10B981', displayOrder: 7, isInitialState: false },
-    { code: 'REJECTED', displayName: 'ถูกปฏิเสธ', colorCode: '#EF4444', displayOrder: 8, isInitialState: false },
-    { code: 'REVISION', displayName: 'ส่งกลับแก้ไข', colorCode: '#F97316', displayOrder: 9, isInitialState: false },
+    { code: 'PENDING', displayName: 'รอหัวหน้าแผนกอนุมัติ', colorCode: '#F59E0B', displayOrder: 1, isInitialState: true }, // Amber
+    { code: 'WAITING_ACCOUNT_1', displayName: 'รอนำส่งบัญชีตรวจสอบ', colorCode: '#3B82F6', displayOrder: 2, isInitialState: false }, // Blue
+    { code: 'WAITING_FINAL_APP', displayName: 'รอผู้อนุมัติสูงสุด', colorCode: '#8B5CF6', displayOrder: 3, isInitialState: false }, // Purple
+    { code: 'IT_WORKING', displayName: 'รอ IT ดำเนินการ', colorCode: '#EC4899', displayOrder: 4, isInitialState: false }, // Pink
+    { code: 'WAITING_ACCOUNT_2', displayName: 'รอตรวจสอบหลังแก้ไข', colorCode: '#14B8A6', displayOrder: 5, isInitialState: false }, // Teal
+    { code: 'WAITING_IT_CLOSE', displayName: 'รอ IT ปิดงาน', colorCode: '#64748B', displayOrder: 6, isInitialState: false }, // Slate
+    { code: 'CLOSED', displayName: 'ปิดงานเรียบร้อย', colorCode: '#10B981', displayOrder: 7, isInitialState: false }, // Emerald
+    { code: 'REJECTED', displayName: 'ถูกปฏิเสธ', colorCode: '#EF4444', displayOrder: 8, isInitialState: false }, // Red
+    { code: 'REVISION', displayName: 'ส่งกลับแก้ไข', colorCode: '#F97316', displayOrder: 9, isInitialState: false }, // Orange
   ];
 
   for (const s of statuses) {
