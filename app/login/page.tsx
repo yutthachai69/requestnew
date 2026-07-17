@@ -31,6 +31,15 @@ export default function LoginPage() {
     }
   }, [status, session, callbackUrl]);
 
+  // "จดจำฉัน" = จำแค่ชื่อผู้ใช้ที่เคยติ๊กไว้ กรอกให้อัตโนมัติ (ไม่เก็บรหัสผ่าน)
+  useEffect(() => {
+    const saved = localStorage.getItem('rememberedUsername');
+    if (saved) {
+      setUsername(saved);
+      setRemember(true);
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -57,7 +66,6 @@ export default function LoginPage() {
     const res = await signIn('credentials', {
       username,
       password,
-      remember: remember ? 'true' : 'false',
       redirect: false,
       callbackUrl,
     });
@@ -68,6 +76,10 @@ export default function LoginPage() {
       setErrors(prev => ({ ...prev, auth: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }));
       return;
     }
+
+    // จำ/ลืมชื่อผู้ใช้ตาม checkbox (เก็บเฉพาะ username ไม่เก็บรหัสผ่าน)
+    if (remember) localStorage.setItem('rememberedUsername', username);
+    else localStorage.removeItem('rememberedUsername');
 
     if (res?.ok || (res as { url?: string })?.url) {
       const target = (res as { url?: string })?.url ?? callbackUrl;
