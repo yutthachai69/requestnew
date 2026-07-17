@@ -3,6 +3,18 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// สร้าง connection URL รูปแบบ SQL Server สำหรับ Prisma CLI (db push / migrate)
+// จาก env MSSQL_* ชุดเดียวกับที่ runtime ใช้ (lib/mssql-config.ts)
+const {
+  MSSQL_SERVER = "localhost",
+  MSSQL_PORT = "1433",
+  MSSQL_DATABASE = "requestonline",
+  MSSQL_USER = "requestapp",
+  MSSQL_PASSWORD = "",
+} = process.env;
+
+const url = `sqlserver://${MSSQL_SERVER}:${MSSQL_PORT};database=${MSSQL_DATABASE};user=${MSSQL_USER};password=${MSSQL_PASSWORD};encrypt=true;trustServerCertificate=true`;
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -10,6 +22,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "postgresql://postgres:1234@localhost:5432/requestonline",
+    url,
   },
 });

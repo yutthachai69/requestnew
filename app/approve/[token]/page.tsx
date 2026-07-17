@@ -13,7 +13,7 @@ export default async function ApprovePage({ params }: { params: Promise<{ token:
     redirect(`/login?callbackUrl=/approve/${token}`);
   }
   // 1. ค้นหาคำร้องด้วย Token
-  const request = await prisma.iTRequestF07.findUnique({
+  const request = await prisma.iTRequestF07.findFirst({
     where: { approvalToken: token },
     include: {
       department: true,

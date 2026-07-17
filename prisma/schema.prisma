@@ -4,18 +4,18 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlserver"
 }
 
 model User {
   id                      Int                      @id @default(autoincrement())
-  username                String                   @unique
+  username                String                   @unique @db.NVarChar(255)
   password                String
   fullName                String
   email                   String
   position                String?
   phoneNumber             String?
-  signatureUrl            String?
+  signatureUrl            String?                  @db.NVarChar(Max)
   isActive                Boolean                  @default(true)
   roleId                  Int
   departmentId            Int?
@@ -31,7 +31,7 @@ model User {
 
 model Role {
   id               Int                  @id @default(autoincrement())
-  roleName         String               @unique
+  roleName         String               @unique @db.NVarChar(255)
   description      String?
   allowBulkActions Boolean              @default(false)
   users            User[]
@@ -40,7 +40,7 @@ model Role {
 
 model Status {
   id              Int                  @id @default(autoincrement())
-  code            String               @unique
+  code            String               @unique @db.NVarChar(255)
   displayName     String
   colorCode       String               @default("#6b7280")
   displayOrder    Int                  @default(0)
@@ -52,14 +52,14 @@ model Status {
 
 model Action {
   id          Int                  @id @default(autoincrement())
-  actionName  String               @unique
+  actionName  String               @unique @db.NVarChar(255)
   displayName String
   transitions WorkflowTransition[]
 }
 
 model Department {
   id       Int            @id @default(autoincrement())
-  name     String         @unique
+  name     String         @unique @db.NVarChar(255)
   isActive Boolean        @default(true)
   requests ITRequestF07[]
   users    User[]
@@ -67,14 +67,14 @@ model Department {
 
 model Location {
   id         Int            @id @default(autoincrement())
-  name       String         @unique
+  name       String         @unique @db.NVarChar(255)
   requests   ITRequestF07[]
   categories Category[]     @relation("CategoryToLocation")
 }
 
 model Category {
   id                      Int                      @id @default(autoincrement())
-  name                    String                   @unique
+  name                    String                   @unique @db.NVarChar(255)
   requiresCCSClosing      Boolean                  @default(false)
   docConfigs              DocConfig[]
   requests                ITRequestF07[]
@@ -88,17 +88,17 @@ model Category {
 
 model CorrectionReason {
   id       Int     @id @default(autoincrement())
-  text     String
+  text     String  @db.NVarChar(Max)
   isActive Boolean @default(true)
 }
 
 model CorrectionType {
   id                     Int                     @id @default(autoincrement())
-  name                   String                  @unique
+  name                   String                  @unique @db.NVarChar(255)
   displayOrder           Int                     @default(10)
   isActive               Boolean                 @default(true)
-  templateString         String?
-  fieldsConfig           String?
+  templateString         String?                 @db.NVarChar(Max)
+  fieldsConfig           String?                 @db.NVarChar(Max)
   requestCorrectionTypes RequestCorrectionType[]
   transitions            WorkflowTransition[]
   categories             Category[]              @relation("CategoryToCorrectionType")
@@ -117,8 +117,8 @@ model WorkflowTransition {
   action             Action          @relation(fields: [actionId], references: [id])
   category           Category        @relation(fields: [categoryId], references: [id])
   correctionType     CorrectionType? @relation(fields: [correctionTypeId], references: [id])
-  currentStatus      Status          @relation("CurrentStatus", fields: [currentStatusId], references: [id])
-  nextStatus         Status          @relation("NextStatus", fields: [nextStatusId], references: [id])
+  currentStatus      Status          @relation("CurrentStatus", fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  nextStatus         Status          @relation("NextStatus", fields: [nextStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   requiredRole       Role            @relation(fields: [requiredRoleId], references: [id])
 }
 
@@ -137,7 +137,7 @@ model SpecialApproverMapping {
   stepSequence Int
   userId       Int
   category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([categoryId, stepSequence])
 }
@@ -153,28 +153,28 @@ model DocConfig {
 
 model EmailTemplate {
   id           Int     @id @default(autoincrement())
-  templateName String  @unique
+  templateName String  @unique @db.NVarChar(255)
   description  String?
   subject      String
-  body         String  @default("")
-  placeholders String  @default("")
+  body         String  @default("") @db.NVarChar(Max)
+  placeholders String  @default("") @db.NVarChar(Max)
 }
 
 model ITRequestF07 {
   id                  Int                     @id @default(autoincrement())
-  workOrderNo         String?                 @unique
+  workOrderNo         String?                 @db.NVarChar(255)
   thaiName            String
   phone               String?
-  problemDetail       String
+  problemDetail       String                  @db.NVarChar(Max)
   systemType          String
   isMoneyRelated      Boolean                 @default(false)
   attachmentPath      String?
   status              String?                 @default("PENDING")
   currentStatusId     Int                     @default(1)
   currentApprovalStep Int                     @default(1)
-  approvalToken       String?                 @unique
-  reasonText          String?
-  problemReason       String?
+  approvalToken       String?                 @db.NVarChar(255)
+  reasonText          String?                 @db.NVarChar(Max)
+  problemReason       String?                 @db.NVarChar(Max)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   requesterId         Int
@@ -184,10 +184,10 @@ model ITRequestF07 {
   approvalHistory     ApprovalHistory[]
   auditLogs           AuditLog[]
   category            Category                @relation(fields: [categoryId], references: [id])
-  currentStatus       Status                  @relation(fields: [currentStatusId], references: [id])
+  currentStatus       Status                  @relation(fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   department          Department              @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   location            Location                @relation(fields: [locationId], references: [id])
-  requester           User                    @relation("Requester", fields: [requesterId], references: [id])
+  requester           User                    @relation("Requester", fields: [requesterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   notifications       Notification[]
   correctionTypes     RequestCorrectionType[]
 
@@ -202,7 +202,7 @@ model ITRequestF07 {
 model RequestCorrectionType {
   requestId        Int
   correctionTypeId Int
-  correctionType   CorrectionType @relation(fields: [correctionTypeId], references: [id], onDelete: Cascade)
+  correctionType   CorrectionType @relation(fields: [correctionTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   request          ITRequestF07   @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@id([requestId, correctionTypeId])
@@ -214,10 +214,10 @@ model AuditLog {
   action    String
   userId    Int?
   ipAddress String?
-  detail    String?
+  detail    String?       @db.NVarChar(Max)
   requestId Int?
-  request   ITRequestF07? @relation(fields: [requestId], references: [id])
-  user      User?         @relation(fields: [userId], references: [id])
+  request   ITRequestF07? @relation(fields: [requestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user      User?         @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([requestId])
   @@index([timestamp])
@@ -230,9 +230,9 @@ model ApprovalHistory {
   approverId        Int
   approvalLevel     Decimal      @default(0)
   actionType        String
-  comment           String?
+  comment           String?      @db.NVarChar(Max)
   approvalTimestamp DateTime     @default(now())
-  approver          User         @relation(fields: [approverId], references: [id])
+  approver          User         @relation(fields: [approverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   request           ITRequestF07 @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@index([requestId, approvalLevel])
@@ -243,10 +243,10 @@ model Notification {
   id        Int           @id @default(autoincrement())
   userId    Int
   requestId Int?
-  message   String
+  message   String        @db.NVarChar(Max)
   isRead    Boolean       @default(false)
   createdAt DateTime      @default(now())
-  request   ITRequestF07? @relation(fields: [requestId], references: [id])
+  request   ITRequestF07? @relation(fields: [requestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])

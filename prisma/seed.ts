@@ -1,12 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaMssql } from '@prisma/adapter-mssql';
+import { getMssqlConfig } from '../lib/mssql-config';
+import 'dotenv/config';
 import { hashPassword } from '../lib/hash';
 
 // PostgreSQL connection
-const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres:1234@localhost:5432/requestonline';
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaMssql(getMssqlConfig());
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -143,17 +142,19 @@ async function main() {
 
   // 5. Actions (Unchanged)
   console.log('Seeding Actions...');
+  // NOTE: ไม่ระบุ id ตายตัว — SQL Server เป็น IDENTITY column ใส่ค่าเองไม่ได้
+  // insert เรียงลำดับบนตารางว่าง id จะได้ 1,2,3,4 ตรงกับ actionId ที่ workflow transition อ้างอิง
   const actions = [
-    { id: 1, actionName: 'APPROVE', displayName: 'อนุมัติ' },
-    { id: 2, actionName: 'REJECT', displayName: 'ปฏิเสธ/ส่งกลับ' },
-    { id: 3, actionName: 'IT_PROCESS', displayName: 'ดำเนินการเสร็จสิ้น (IT)' },
-    { id: 4, actionName: 'CONFIRM_COMPLETE', displayName: 'ยืนยันปิดงาน' },
+    { actionName: 'APPROVE', displayName: 'อนุมัติ' },
+    { actionName: 'REJECT', displayName: 'ปฏิเสธ/ส่งกลับ' },
+    { actionName: 'IT_PROCESS', displayName: 'ดำเนินการเสร็จสิ้น (IT)' },
+    { actionName: 'CONFIRM_COMPLETE', displayName: 'ยืนยันปิดงาน' },
   ];
 
   for (const a of actions) {
     await prisma.action.upsert({
-      where: { id: a.id },
-      update: { actionName: a.actionName, displayName: a.displayName },
+      where: { actionName: a.actionName },
+      update: { displayName: a.displayName },
       create: a,
     });
   }
@@ -251,6 +252,18 @@ async function main() {
   // 7. Email Templates (Keep existing or upset)
   // ... (Keeping previous logic if needed, or assuming they exist)
 
+  // 8. SQL Server: filtered unique index — ยอมให้ NULL ซ้ำได้ แต่ค่าที่ไม่ NULL ต้องไม่ซ้ำ
+  //    (ใช้แทน @unique เดิม เพราะ SQL Server มองหลาย NULL เป็นค่าซ้ำกัน)
+  console.log('Creating filtered unique indexes...');
+  await prisma.$executeRawUnsafe(
+    `IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_ITRequestF07_workOrderNo')
+       CREATE UNIQUE INDEX UX_ITRequestF07_workOrderNo ON [ITRequestF07]([workOrderNo]) WHERE [workOrderNo] IS NOT NULL;`
+  );
+  await prisma.$executeRawUnsafe(
+    `IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_ITRequestF07_approvalToken')
+       CREATE UNIQUE INDEX UX_ITRequestF07_approvalToken ON [ITRequestF07]([approvalToken]) WHERE [approvalToken] IS NOT NULL;`
+  );
+
   console.log('✅ Seeding completed.');
 }
 
@@ -261,5 +274,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
   });

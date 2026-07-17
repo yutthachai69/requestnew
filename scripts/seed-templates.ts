@@ -1,10 +1,9 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaMssql } from '@prisma/adapter-mssql';
+import { getMssqlConfig } from '../lib/mssql-config';
+import 'dotenv/config';
 
-const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres:1234@localhost:5432/requestonline';
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaMssql(getMssqlConfig());
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -99,5 +98,5 @@ main()
     })
     .finally(async () => {
         await prisma.$disconnect();
-        await pool.end();
+        await prisma.$disconnect();
     });

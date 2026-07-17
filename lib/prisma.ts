@@ -1,16 +1,12 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaMssql } from '@prisma/adapter-mssql';
+import { getMssqlConfig } from '@/lib/mssql-config';
 
-// PostgreSQL connection pool
-const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres:1234@localhost:5432/requestonline';
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
-
-// Singleton pattern for Prisma Client
+// Singleton pattern for Prisma Client (SQL Server via @prisma/adapter-mssql)
 const globalForPrisma = globalThis as typeof globalThis & { prisma?: PrismaClient };
 
-const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
+const prisma =
+  globalForPrisma.prisma ?? new PrismaClient({ adapter: new PrismaMssql(getMssqlConfig()) });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
