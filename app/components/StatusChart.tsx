@@ -109,10 +109,10 @@ export default function StatusChart({ data }: { data: { name: string; value: num
   }));
 
   return (
-    <div className="h-[280px] w-full relative">
+    <div className="min-h-[280px] w-full relative">
       {totalValue === 0 ? (
         /* Empty state — show a gray placeholder donut */
-        <div className="flex items-center justify-center h-full gap-8">
+        <div className="flex flex-col sm:flex-row items-center justify-center min-h-[280px] gap-4 sm:gap-8">
           <div className="relative">
             <svg width="190" height="190" viewBox="0 0 190 190">
               <circle
@@ -131,7 +131,7 @@ export default function StatusChart({ data }: { data: { name: string; value: num
           </div>
           
           {/* Legend for empty state */}
-          <div className="flex flex-col gap-3 pl-4 border-l border-gray-100">
+          <div className="flex flex-col gap-3 sm:pl-4 sm:border-l border-gray-100">
             {data.map((item, index) => (
               <div key={index} className="flex items-center justify-between gap-4 text-sm p-1.5">
                 <div className="flex items-center gap-2">
@@ -152,8 +152,8 @@ export default function StatusChart({ data }: { data: { name: string; value: num
         </div>
       ) : (
         /* Normal chart rendering */
-        <div className="flex h-full items-center p-4">
-          
+        <div className="flex flex-col sm:flex-row min-h-[280px] items-center justify-center gap-3 sm:gap-0 p-4">
+
           {/* Left side: The Pie Chart + Center Label in a perfect square */}
           <div className="relative w-[180px] h-[180px] flex-shrink-0">
             <ResponsiveContainer width={180} height={180}>
@@ -185,7 +185,7 @@ export default function StatusChart({ data }: { data: { name: string; value: num
           </div>
           
           {/* Right side: The Legend built manually to avoid Recharts SVG shifting */}
-          <div className="flex-1 ml-6 flex flex-col justify-center border-l border-gray-100 pl-6 space-y-3">
+          <div className="w-full sm:flex-1 sm:ml-6 flex flex-col justify-center sm:border-l border-gray-100 sm:pl-6 space-y-3">
             {chartData.map((entry, index) => {
               const bgClass = STATUS_COLOR_MAP[entry.name] || 'bg-gray-400';
               const percent = Math.round((entry.value / totalValue) * 100) || 0;
