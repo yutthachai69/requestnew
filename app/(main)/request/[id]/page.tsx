@@ -9,6 +9,7 @@ import { useNotification } from '@/app/context/NotificationContext';
 import { invalidateAppShellCache } from '@/lib/client/app-shell-cache';
 import { useAppNotification } from '@/app/context/AppNotificationContext';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
+import { parseAttachments, isImageFile } from '@/lib/attachments';
 
 // Dynamic import for F07FormPrint - lazy load as it's not needed immediately
 const F07FormPrint = dynamic(() => import('@/app/components/F07FormPrint'), {
@@ -204,6 +205,8 @@ export default function RequestDetailPage() {
     approver: approvedByAnyRole(['Final Approver', 'ผู้อนุมัติ', 'ผู้จัดการฝ่ายสำนักงาน', 'รองผู้อำนวยการโรงงาน', 'ผู้จัดการโรงงาน']),
   };
 
+  const attachments = parseAttachments(request.attachmentPath);
+
   const f07Request = {
     workOrderNo: request.workOrderNo,
     thaiName: request.thaiName,
@@ -321,6 +324,48 @@ export default function RequestDetailPage() {
               <strong>รอ IT ปิดงาน:</strong> ถ้าคุณเป็น IT Reviewer แต่ปุ่ม &quot;ยืนยันปิดงาน&quot; ไม่ขึ้น ให้รัน <code className="bg-blue-100 px-1 rounded">npm run db:seed</code> แล้วรีเฟรชหรือล็อกอินใหม่
             </div>
           ) : null}
+
+          {attachments.length > 0 && (
+            <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-900 mb-3">ไฟล์แนบ ({attachments.length} ไฟล์)</h3>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
+              >
+                {attachments.map((path, index) =>
+                  isImageFile(path) ? (
+                    <a
+                      key={index}
+                      href={path}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block border border-gray-200 rounded-lg overflow-hidden bg-gray-50 hover:ring-2 hover:ring-blue-300 transition-all group"
+                    >
+                      <div className="bg-gray-100 flex items-center justify-center" style={{ aspectRatio: '4 / 3' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={path} alt={`ไฟล์แนบ ${index + 1}`} className="max-w-full max-h-full object-contain" />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate px-2 py-1.5 border-t border-gray-100 group-hover:text-blue-600">
+                        {path.split('/').pop()}
+                      </p>
+                    </a>
+                  ) : (
+                    <a
+                      key={index}
+                      href={path}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 transition-colors flex flex-col items-center justify-center gap-2"
+                      style={{ aspectRatio: '4 / 3' }}
+                    >
+                      <span className="text-red-500 font-bold text-2xl">PDF</span>
+                      <span className="text-xs text-gray-600 truncate max-w-[90%] text-center">{path.split('/').pop()}</span>
+                    </a>
+                  )
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className="w-full lg:w-72 shrink-0">
