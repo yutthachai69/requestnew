@@ -137,9 +137,10 @@ export default function RequestPrintPage() {
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       const pdfW = 210;
-      const pdfH = pdfW * (canvas.height / canvas.width);
-      const pdf = new jsPDF(pdfW > pdfH ? 'l' : 'p', 'mm', [pdfW, pdfH]);
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
+      const pdfH = 297; // A4 height — หน้าเป็น A4 เต็มแผ่น (ให้ตรงกับปุ่ม "พิมพ์ฟอร์ม") ไม่ใช่ตัดตามสัดส่วนฟอร์ม
+      const imgH = pdfW * (canvas.height / canvas.width); // ความสูงฟอร์มตามสัดส่วนจริง
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, imgH); // วางฟอร์มชิดบน กว้างเต็มหน้า
 
       const pdfAttachmentsToMerge: ArrayBuffer[] = [];
 
