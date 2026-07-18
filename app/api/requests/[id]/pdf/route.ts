@@ -310,7 +310,7 @@ async function buildF07Pdf(req: {
   const cbY = detailBoxY + detailHeight - 42;
   const checkSize = 7;
   const checkX1 = margin + 15 + (10 - checkSize) / 2 + 0.5;
-  const checkY = cbY + 6;
+  const checkY = cbY + 2; // จัดให้ ✓ อยู่กลางช่องสูง 10pt (เดิม +6 ทำให้ลอยพ้นช่อง)
   if (isErp) page.drawText('✓', { x: checkX1, y: checkY, size: checkSize, font: fontBold });
   page.drawText(t('ระบบ ERP Softpro'), { x: margin + 30, y: cbY + 1, size, font });
 

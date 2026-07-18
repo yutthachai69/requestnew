@@ -117,22 +117,23 @@ export default function RequestPrintPage() {
     
     setDownloading(true);
     try {
-      const html2canvas = (await import('html2canvas')).default;
+      // html2canvas-pro: fork ที่รองรับสี oklch ของ Tailwind v4 (ตัวเดิม html2canvas เรนเดอร์ oklch เพี้ยน)
+      const html2canvas = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
       // กำหนดขนาดจำลองให้ html2canvas จับภาพได้เต็มแผ่น 100% (ป้องกันจอเล็กบีบฟอร์ม)
-      const targetWidth = 794; 
-      
+      const targetWidth = 794;
+
       const canvas = await html2canvas(el, {
         scale: 3,
         useCORS: true,
         logging: false,
         width: targetWidth,
         height: el.scrollHeight,
-        windowWidth: targetWidth, 
+        windowWidth: targetWidth,
         ignoreElements: (element) => element.hasAttribute('data-hide-on-pdf'),
       });
-      
+
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       const pdfW = 210;

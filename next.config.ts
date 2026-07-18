@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
 
   // ลด bundle size และเพิ่มขีดจำกัดขนาดไฟล์อัปโหลด
   experimental: {
-    optimizePackageImports: ['recharts', 'jspdf', 'html2canvas', 'lucide-react', 'react-hot-toast'],
+    optimizePackageImports: ['recharts', 'jspdf', 'html2canvas-pro', 'lucide-react', 'react-hot-toast'],
     serverActions: {
       bodySizeLimit: '10mb', // อัปโหลดรูปภาพรวมไม่เกิน 10MB ได้แล้ว
     },

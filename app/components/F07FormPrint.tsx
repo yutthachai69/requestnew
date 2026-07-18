@@ -102,7 +102,7 @@ export default function F07FormPrint({
     }
   }
 
-  const PROBLEM_LINES = Math.max(10, lines.length);
+  const PROBLEM_LINES = Math.max(7, lines.length); // เท่าฟอร์มจริง (เดิม 10 ทำให้กล่องสูงเกิน ดันช่องเซ็นห่าง)
 
   // Helper สำหรับ render ลายเซ็นแบบฟอร์มจริง (เส้นประ....... ตามด้วยชื่อตำแหน่ง)
   const renderSig = (label: string, sigData?: { name: string; url?: string | null } | string) => {
@@ -110,20 +110,21 @@ export default function F07FormPrint({
     const url = typeof sigData === 'string' ? null : sigData?.url;
 
     return (
-      <div className="flex items-end justify-end mb-4 relative" style={{ minHeight: '42px' }}>
+      <div className="flex items-end mb-4 relative" style={{ minHeight: '42px' }}>
         {url && (
           <div className="absolute bottom-4 right-12 flex justify-center pointer-events-none">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt="signature" className="max-h-[35px] max-w-[100px] object-contain mix-blend-multiply" />
           </div>
         )}
+        {/* \u0E40\u0E2A\u0E49\u0E19\u0E1B\u0E23\u0E30\u0E22\u0E37\u0E14\u0E40\u0E15\u0E47\u0E21\u0E04\u0E27\u0E32\u0E21\u0E01\u0E27\u0E49\u0E32\u0E07 (flex-1) \u2014 \u0E17\u0E38\u0E01\u0E0A\u0E48\u0E2D\u0E07\u0E22\u0E32\u0E27\u0E40\u0E17\u0E48\u0E32\u0E01\u0E31\u0E19; \u0E1B\u0E49\u0E32\u0E22\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E01\u0E27\u0E49\u0E32\u0E07\u0E04\u0E07\u0E17\u0E35\u0E48 */}
         <span
-          className="inline-block border-b border-dotted border-black text-center"
-          style={{ minWidth: '180px', paddingBottom: '3px' }}
+          className="border-b border-dotted border-black text-center"
+          style={{ flex: 1, paddingBottom: '3px' }}
         >
           {url ? '\u00A0' : (name || '\u00A0')}
         </span>
-        <span className="ml-1 whitespace-nowrap">{label}</span>
+        <span className="ml-1 whitespace-nowrap" style={{ width: '100px' }}>{label}</span>
       </div>
     );
   };
@@ -167,6 +168,9 @@ export default function F07FormPrint({
             </div>
           </div>
         </div>
+
+        {/* spacer กว้างเท่าโลโก้ทางขวา — ให้หัวข้ออยู่กึ่งกลางหน้าจริง (ไม่ถูกโลโก้ดันเยื้องขวา) */}
+        <div className="flex-shrink-0" style={{ width: '160px' }} aria-hidden="true" />
       </div>
 
       {/* ════════════ MAIN BORDERED SECTION ════════════ */}
@@ -275,13 +279,6 @@ export default function F07FormPrint({
                 </div>
               </div>
 
-              {/* ปัญหาอุปสรรค */}
-              <div style={{ fontSize: '11px' }}>
-                <div className="flex items-baseline">
-                  <span className="font-bold underline whitespace-nowrap">ปัญหาอุปสรรค (ถ้ามี)</span>
-                  <Dotted value={itObstacles ?? undefined} />
-                </div>
-              </div>
             </div>
 
             {/* ขวา: กล่องฟ้า */}
@@ -306,9 +303,13 @@ export default function F07FormPrint({
             </div>
           </div>
 
-          {/* เส้นจุดปัญหาอุปสรรคเต็มความกว้าง */}
-          <div className="border-b border-dotted border-gray-400 mt-1" style={{ minHeight: '14px' }}>{' '}</div>
-          <div className="border-b border-dotted border-gray-400 mt-1" style={{ minHeight: '14px' }}>{' '}</div>
+          {/* ปัญหาอุปสรรค — เต็มความกว้าง (ป้ายกำกับ + เส้นจุดลากจนสุดขอบขวา เหมือนฟอร์มจริง) */}
+          <div className="flex items-baseline mt-1" style={{ fontSize: '11px' }}>
+            <span className="font-bold underline whitespace-nowrap">ปัญหาอุปสรรค (ถ้ามี)</span>
+            <Dotted value={itObstacles ?? undefined} />
+          </div>
+          <div className="border-b border-dotted border-black mt-1" style={{ minHeight: '14px' }}>{' '}</div>
+          <div className="border-b border-dotted border-black mt-1" style={{ minHeight: '14px' }}>{' '}</div>
         </div>
       </div>
 
