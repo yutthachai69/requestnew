@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/doc-config?year=2569 - list doc configs for a year (one row per category) */
 export async function GET(request: NextRequest) {
@@ -59,8 +60,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(list);
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/doc-config');
   }
 }
 
@@ -109,7 +109,6 @@ export async function POST(request: NextRequest) {
       categoryName: created.category.name,
     });
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/doc-config');
   }
 }

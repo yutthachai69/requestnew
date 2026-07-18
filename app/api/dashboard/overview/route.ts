@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { fetchDashboardStatistics } from '@/lib/dashboard-stats';
 import { fetchRequestsList } from '@/lib/requests-list';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/dashboard/overview
@@ -39,7 +40,6 @@ export async function GET(request: NextRequest) {
       totalCount: list.totalCount,
     });
   } catch (e) {
-    console.error('GET /api/dashboard/overview', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/dashboard/overview');
   }
 }

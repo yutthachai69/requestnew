@@ -2,6 +2,7 @@ import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/hash';
+import { handleApiError } from '@/lib/api-error';
 
 /** POST /api/admin/users/[id]/reset-password - set new password for user */
 export async function POST(
@@ -26,6 +27,6 @@ export async function POST(
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/users/[id]/reset-password');
   }
 }

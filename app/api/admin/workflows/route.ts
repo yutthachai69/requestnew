@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/workflows?categoryId=1 - list workflow steps (all or by category) */
 export async function GET(request: NextRequest) {
@@ -47,8 +48,7 @@ export async function GET(request: NextRequest) {
       })
     );
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/workflows');
   }
 }
 
@@ -85,6 +85,6 @@ export async function POST(request: NextRequest) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2003')
       return NextResponse.json({ message: 'ไม่พบหมวดหมู่' }, { status: 400 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/workflows');
   }
 }

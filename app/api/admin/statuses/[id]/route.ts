@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/statuses/[id] — ดึงสถานะเดียว (Admin) */
 export async function GET(
@@ -22,8 +23,7 @@ export async function GET(
       displayOrder: s.displayOrder,
     });
   } catch (e) {
-    console.error('GET /api/admin/statuses/[id]', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/statuses/[id]');
   }
 }
 
@@ -60,7 +60,6 @@ export async function PUT(
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบสถานะ' }, { status: 404 });
-    console.error('PUT /api/admin/statuses/[id]', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/statuses/[id]');
   }
 }

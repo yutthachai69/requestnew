@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET(
   _request: NextRequest,
@@ -64,7 +65,6 @@ export async function GET(
     return NextResponse.json({ trend });
 
   } catch (error) {
-    console.error('Error fetching category stats:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(error, 'GET /api/category/[id]/statistics');
   }
 }

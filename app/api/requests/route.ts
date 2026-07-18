@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchRequestsList } from '@/lib/requests-list';
 import { requireAuth, isAuthError } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/requests - รายการคำร้อง (filter: categoryId, status, excludeStatus, search, page, limit)
@@ -29,7 +30,6 @@ export async function GET(request: NextRequest) {
     );
     return NextResponse.json(result);
   } catch (e) {
-    console.error('GET /api/requests', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/requests');
   }
 }

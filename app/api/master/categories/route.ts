@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { getCategoriesForUser } from '@/lib/categories-for-user';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/master/categories
@@ -15,7 +16,6 @@ export async function GET() {
     const list = await getCategoriesForUser(userId ? Number(userId) : null, roleName ?? undefined);
     return NextResponse.json(list);
   } catch (e) {
-    console.error('GET /api/master/categories', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/master/categories');
   }
 }

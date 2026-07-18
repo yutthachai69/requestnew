@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/actions — รายการ Action ทั้งหมด (สำหรับตั้งค่า Workflow Transitions) */
 export async function GET() {
@@ -18,7 +19,6 @@ export async function GET() {
       }))
     );
   } catch (e) {
-    console.error('GET /api/admin/actions', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/actions');
   }
 }

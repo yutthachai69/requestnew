@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/dashboard/category-stats?startDate=&endDate= - สถิติตามหมวดหมู่ (สำหรับ Welcome/Chart) */
 export async function GET(request: NextRequest) {
@@ -61,7 +62,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(list);
   } catch (e) {
-    console.error('GET /api/dashboard/category-stats', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/dashboard/category-stats');
   }
 }

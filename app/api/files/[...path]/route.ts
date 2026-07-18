@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, getMimeType, getFilePath } from '@/lib/storage';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/files/[...path] - Serve files from uploads folder with auth check
@@ -53,7 +54,6 @@ export async function GET(
             },
         });
     } catch (error) {
-        console.error('Error serving file:', error);
-        return NextResponse.json({ error: 'Failed to read file' }, { status: 500 });
+        return handleApiError(error, 'GET /api/files/[...path]');
     }
 }

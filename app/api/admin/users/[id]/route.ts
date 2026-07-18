@@ -2,6 +2,7 @@ import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/hash';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/admin/users/[id] - update user (optional new password) */
 export async function PUT(
@@ -84,7 +85,7 @@ export async function PUT(
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2025') return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
     if (code === 'P2002') return NextResponse.json({ message: 'ชื่อผู้ใช้ซ้ำ' }, { status: 400 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/users/[id]');
   }
 }
 
@@ -103,6 +104,6 @@ export async function DELETE(
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/admin/users/[id]');
   }
 }

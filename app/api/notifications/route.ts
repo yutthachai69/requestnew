@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/api-auth';
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 export async function GET() {
   const user = await getAuthUser();
@@ -35,8 +36,7 @@ export async function GET() {
 
     return NextResponse.json({ notifications: mapped, unreadCount });
   } catch (error) {
-    console.error('GET /api/notifications error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(error, 'GET /api/notifications');
   }
 }
 
@@ -59,6 +59,6 @@ export async function PATCH(req: NextRequest) {
     }
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Update failed' }, { status: 500 });
+    return handleApiError(error, 'PATCH /api/notifications');
   }
 }

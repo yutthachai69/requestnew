@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/auth/my-stats - สถิติของผู้ใช้ปัจจุบัน (จำนวนคำร้องที่สร้าง, จำนวนครั้งที่ดำเนินการ) */
 export async function GET() {
@@ -23,7 +24,6 @@ export async function GET() {
 
     return NextResponse.json({ requestsCreated, actionsTaken });
   } catch (e) {
-    console.error('GET /api/auth/my-stats', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/auth/my-stats');
   }
 }

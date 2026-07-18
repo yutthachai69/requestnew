@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/admin/doc-config/[id] - update prefix or lastRunningNumber */
 export async function PUT(
@@ -37,6 +38,6 @@ export async function PUT(
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2025') return NextResponse.json({ message: 'ไม่พบรายการ' }, { status: 404 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/doc-config/[id]');
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/hash';
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/users - list all users (with role & department) */
 export async function GET() {
@@ -29,8 +30,7 @@ export async function GET() {
       }))
     );
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/users');
   }
 }
 
@@ -96,6 +96,6 @@ export async function POST(request: NextRequest) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2002')
       return NextResponse.json({ message: 'ชื่อผู้ใช้ซ้ำ' }, { status: 400 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/users');
   }
 }

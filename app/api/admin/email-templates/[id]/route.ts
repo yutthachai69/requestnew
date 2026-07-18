@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/admin/email-templates/[id] — แก้ไข subject, body (Admin) */
 export async function PUT(
@@ -33,7 +34,6 @@ export async function PUT(
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบเทมเพลต' }, { status: 404 });
-    console.error('PUT /api/admin/email-templates/[id]', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/email-templates/[id]');
   }
 }

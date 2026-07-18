@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getUserRoleNamesForWorkflowRole } from '@/lib/auth-constants';
 import { findPossibleTransitions } from '@/lib/workflow';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/requests/[id] - รายละเอียดคำร้องเดียว
@@ -151,8 +152,7 @@ export async function GET(
       itObstacles: itObstacles || null,
     });
   } catch (e) {
-    console.error('GET /api/requests/[id]', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/requests/[id]');
   }
 }
 
@@ -301,8 +301,7 @@ export async function PUT(
 
     return NextResponse.json({ message: 'อัปเดตคำร้องสำเร็จ', request: updated });
   } catch (e) {
-    console.error('PUT /api/requests/[id]', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/requests/[id]');
   }
 }
 
@@ -354,7 +353,6 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'ลบคำร้องเรียบร้อย' });
   } catch (e) {
-    console.error('DELETE /api/requests/[id]', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/requests/[id]');
   }
 }

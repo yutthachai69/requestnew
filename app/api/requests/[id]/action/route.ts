@@ -6,6 +6,7 @@ import {
   type ApprovalErrorCode,
 } from '@/lib/services/approvalService';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { handleApiError } from '@/lib/api-error';
 
 const ERROR_STATUS: Record<ApprovalErrorCode, number> = {
   NOT_FOUND: 404,
@@ -103,7 +104,6 @@ export async function POST(
       request: { id, status: outcome.nextCode, currentStatusId: outcome.nextStatusId },
     });
   } catch (e) {
-    console.error('POST /api/requests/[id]/action', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/requests/[id]/action');
   }
 }

@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/statuses — รายการสถานะทั้งหมด (Admin) */
 export async function GET() {
@@ -20,7 +21,6 @@ export async function GET() {
       }))
     );
   } catch (e) {
-    console.error('GET /api/admin/statuses', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/statuses');
   }
 }

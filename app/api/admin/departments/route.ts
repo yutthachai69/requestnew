@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/departments - list all departments */
 export async function GET() {
@@ -14,8 +15,7 @@ export async function GET() {
       list.map((d) => ({ DepartmentID: d.id, DepartmentName: d.name, IsActive: d.isActive }))
     );
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/departments');
   }
 }
 
@@ -36,9 +36,8 @@ export async function POST(request: NextRequest) {
       IsActive: created.isActive,
     });
   } catch (e: unknown) {
-    const msg = e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2002'
-      ? 'ชื่อแผนกซ้ำ'
-      : 'Server error';
-    return NextResponse.json({ message: msg }, { status: 400 });
+    if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2002')
+      return NextResponse.json({ message: 'ชื่อแผนกซ้ำ' }, { status: 400 });
+    return handleApiError(e, 'POST /api/admin/departments');
   }
 }

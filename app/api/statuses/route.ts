@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/statuses — รายการสถานะ (ชื่อที่แสดงผล + สี) สำหรับใช้แสดงในระบบ (ต้องล็อกอิน) */
 export async function GET() {
@@ -18,7 +19,6 @@ export async function GET() {
       }))
     );
   } catch (e) {
-    console.error('GET /api/statuses', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/statuses');
   }
 }

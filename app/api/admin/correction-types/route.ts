@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/correction-types - list all (Admin) */
 export async function GET(request: NextRequest) {
@@ -42,8 +43,7 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/correction-types');
   }
 }
 
@@ -88,11 +88,13 @@ export async function POST(request: NextRequest) {
     if (err?.code === 'P2002') {
       return NextResponse.json({ message: 'ชื่อประเภทการแก้ไขซ้ำ' }, { status: 400 });
     }
-    console.error('POST /api/admin/correction-types', e);
     const isMissingColumn = typeof err?.message === 'string' && err.message.includes('no such column');
-    const message = isMissingColumn
-      ? 'ฐานข้อมูลยังไม่มีคอลัมน์ templateString/fieldsConfig — กรุณารัน: npx tsx scripts/add-correction-type-fields.ts'
-      : (err?.message ?? 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์');
-    return NextResponse.json({ message }, { status: 500 });
+    if (isMissingColumn) {
+      return NextResponse.json(
+        { message: 'ฐานข้อมูลยังไม่มีคอลัมน์ templateString/fieldsConfig — กรุณารัน: npx tsx scripts/add-correction-type-fields.ts' },
+        { status: 500 }
+      );
+    }
+    return handleApiError(e, 'POST /api/admin/correction-types');
   }
 }

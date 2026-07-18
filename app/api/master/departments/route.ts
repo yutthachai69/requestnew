@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/master/departments — รายการแผนกที่เปิดใช้งาน (สำหรับผู้ที่ไม่มีแผนกในระบบ เช่น Admin/Final Approver เลือกแผนกที่ยื่นคำร้อง) */
 export async function GET() {
@@ -16,7 +17,6 @@ export async function GET() {
       list.map((d) => ({ DepartmentID: d.id, DepartmentName: d.name }))
     );
   } catch (e) {
-    console.error('GET /api/master/departments', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/master/departments');
   }
 }

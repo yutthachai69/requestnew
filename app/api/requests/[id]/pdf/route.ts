@@ -5,6 +5,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import * as fs from 'fs';
 import * as path from 'path';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/requests/[id]/pdf
@@ -47,8 +48,7 @@ export async function GET(
       },
     });
   } catch (e) {
-    console.error('GET /api/requests/[id]/pdf', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/requests/[id]/pdf');
   }
 }
 

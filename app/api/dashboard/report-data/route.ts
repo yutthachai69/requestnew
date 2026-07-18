@@ -2,6 +2,7 @@ import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getDepartmentFilter } from '@/lib/get-department-filter';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/dashboard/report-data - ข้อมูลรายงาน (filter ตาม role + วันที่) */
 export async function GET(request: NextRequest) {
@@ -74,7 +75,6 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (e) {
-    console.error('GET /api/dashboard/report-data', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/dashboard/report-data');
   }
 }

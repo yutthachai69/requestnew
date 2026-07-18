@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword, verifyPassword } from '@/lib/hash';
 import { requireAuth, isAuthError } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/auth/change-password - เปลี่ยนรหัสผ่าน (ต้องล็อกอิน) */
 export async function PUT(request: NextRequest) {
@@ -35,7 +36,6 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ message: 'เปลี่ยนรหัสผ่านสำเร็จ' });
   } catch (e) {
-    console.error('PUT /api/auth/change-password', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/auth/change-password');
   }
 }

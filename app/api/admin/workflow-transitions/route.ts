@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/workflow-transitions?categoryId=1&correctionTypeId= — รายการ Transition ต่อหมวดหมู่ (ขั้นตอนอนุมัติที่ใช้จริง) */
 export async function GET(request: NextRequest) {
@@ -50,8 +51,7 @@ export async function GET(request: NextRequest) {
       }))
     );
   } catch (e) {
-    console.error('GET /api/admin/workflow-transitions', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/workflow-transitions');
   }
 }
 
@@ -123,8 +123,7 @@ export async function POST(request: NextRequest) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2003')
       return NextResponse.json({ message: 'ไม่พบหมวดหมู่/สถานะ/Role/Action' }, { status: 400 });
-    console.error('POST /api/admin/workflow-transitions', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/workflow-transitions');
   }
 }
 
@@ -151,7 +150,6 @@ export async function DELETE(request: NextRequest) {
     });
     return NextResponse.json({ message: `ลบ Workflow แล้ว (${result.count} รายการ)`, count: result.count });
   } catch (e) {
-    console.error('DELETE /api/admin/workflow-transitions', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/admin/workflow-transitions');
   }
 }

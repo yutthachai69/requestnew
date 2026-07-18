@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/admin/categories/[id] */
 export async function PUT(
@@ -30,7 +31,7 @@ export async function PUT(
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบหมวดหมู่' }, { status: 404 });
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/categories/[id]');
   }
 }
 
@@ -74,7 +75,6 @@ export async function DELETE(
       return NextResponse.json({ message: 'ไม่พบหมวดหมู่' }, { status: 404 });
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2003')
       return NextResponse.json({ message: 'ไม่สามารถลบได้ เพราะมีข้อมูลอื่นอ้างอิงหมวดหมู่นี้อยู่' }, { status: 409 });
-    console.error('DELETE /api/admin/categories/[id]', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/admin/categories/[id]');
   }
 }

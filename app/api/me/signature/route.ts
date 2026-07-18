@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 export async function POST(req: Request) {
   try {
@@ -24,7 +25,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, message: 'บันทึกลายเซ็นสำเร็จ' });
   } catch (error) {
-    console.error('Error saving signature:', error);
-    return NextResponse.json({ error: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' }, { status: 500 });
+    return handleApiError(error, 'POST /api/me/signature');
   }
 }

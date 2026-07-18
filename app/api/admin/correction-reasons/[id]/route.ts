@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** PUT /api/admin/correction-reasons/[id] */
 export async function PUT(
@@ -30,8 +31,7 @@ export async function PUT(
   } catch (e: unknown) {
     const err = e as { code?: string };
     if (err?.code === 'P2025') return NextResponse.json({ message: 'ไม่พบเหตุผลการแก้ไข' }, { status: 404 });
-    console.error('PUT /api/admin/correction-reasons/[id]', e);
-    return NextResponse.json({ message: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์' }, { status: 500 });
+    return handleApiError(e, 'PUT /api/admin/correction-reasons/[id]');
   }
 }
 
@@ -50,6 +50,6 @@ export async function DELETE(
   } catch (e: unknown) {
     const err = e as { code?: string };
     if (err?.code === 'P2025') return NextResponse.json({ message: 'ไม่พบเหตุผลการแก้ไข' }, { status: 404 });
-    return NextResponse.json({ message: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/admin/correction-reasons/[id]');
   }
 }

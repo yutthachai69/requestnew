@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { executeApprovalByToken } from '@/lib/services/approvalService';
+import { handleActionError } from '@/lib/api-error';
 
 function getClientIp(headersList: Headers): string {
   return (
@@ -73,7 +74,7 @@ export async function handleApprovalAction(
 
     return { success: true, message: 'อนุมัติเรียบร้อย ส่งต่อขั้นถัดไปแล้ว' };
   } catch (error) {
-    console.error('approve-action error:', error);
-    return { success: false, message: 'เกิดข้อผิดพลาด กรุณาลองใหม่' };
+    const { error: message } = handleActionError(error, 'handleApprovalAction');
+    return { success: false, message };
   }
 }

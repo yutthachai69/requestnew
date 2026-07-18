@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/correction-reasons */
 export async function GET() {
@@ -18,8 +19,7 @@ export async function GET() {
       }))
     );
   } catch (e) {
-    console.error('GET /api/admin/correction-reasons', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/correction-reasons');
   }
 }
 
@@ -41,7 +41,6 @@ export async function POST(request: NextRequest) {
       IsActive: created.isActive,
     });
   } catch (e) {
-    console.error('POST /api/admin/correction-reasons', e);
-    return NextResponse.json({ message: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/correction-reasons');
   }
 }

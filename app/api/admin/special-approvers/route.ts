@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/special-approvers?categoryId=1 - list special approvers for a category */
 export async function GET(request: NextRequest) {
@@ -25,8 +26,7 @@ export async function GET(request: NextRequest) {
       }))
     );
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/special-approvers');
   }
 }
 
@@ -54,8 +54,7 @@ export async function POST(request: NextRequest) {
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2003') return NextResponse.json({ message: 'ไม่พบหมวดหมู่หรือผู้ใช้' }, { status: 400 });
-    console.error(e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/special-approvers');
   }
 }
 
@@ -78,7 +77,6 @@ export async function DELETE(request: NextRequest) {
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบรายการ' }, { status: 404 });
-    console.error(e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'DELETE /api/admin/special-approvers');
   }
 }

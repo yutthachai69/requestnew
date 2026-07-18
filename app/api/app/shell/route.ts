@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCategoriesForUser } from '@/lib/categories-for-user';
 import { countPendingTasksForUser } from '@/lib/pending-tasks-shared';
+import { handleApiError } from '@/lib/api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,6 @@ export async function GET() {
       pendingCount,
     });
   } catch (e) {
-    console.error('GET /api/app/shell', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/app/shell');
   }
 }

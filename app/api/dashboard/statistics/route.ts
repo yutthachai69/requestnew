@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 import { fetchDashboardStatistics } from '@/lib/dashboard-stats';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/dashboard/statistics?startDate=&endDate= */
 export async function GET(request: NextRequest) {
@@ -18,7 +19,6 @@ export async function GET(request: NextRequest) {
     const stats = await fetchDashboardStatistics(userId, roleName, { startDate, endDate });
     return NextResponse.json(stats);
   } catch (e) {
-    console.error('GET /api/dashboard/statistics', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/dashboard/statistics');
   }
 }

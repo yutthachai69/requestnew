@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { approverRoles } from '@/lib/auth-constants';
 import { getPendingTransitionMetaForUser } from '@/lib/pending-tasks-shared';
+import { handleApiError } from '@/lib/api-error';
 
 const APPROVAL_DONE_TYPES = ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'];
 
@@ -74,8 +75,7 @@ export async function GET() {
       requests: requests.map((r) => toPendingItem(r)),
     });
   } catch (e) {
-    console.error('GET /api/pending-tasks', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/pending-tasks');
   }
 }
 

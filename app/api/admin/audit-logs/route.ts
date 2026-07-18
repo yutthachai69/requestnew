@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** GET /api/admin/audit-logs?page=1&limit=20&search=&action=&startDate=&endDate= */
 export async function GET(request: NextRequest) {
@@ -69,7 +70,6 @@ export async function GET(request: NextRequest) {
       totalCount: total,
     });
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/admin/audit-logs');
   }
 }

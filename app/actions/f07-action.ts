@@ -12,6 +12,7 @@ import { getFirstApproverForCategoryFromTransitions, getFirstApproverForCategory
 import { requesterRoles } from '@/lib/auth-constants';
 
 import { saveFile } from '@/lib/storage';
+import { handleActionError } from '@/lib/api-error';
 
 export async function submitF07(formData: FormData) {
     const session = await getServerSession(authOptions)
@@ -173,7 +174,6 @@ export async function submitF07(formData: FormData) {
         }
 
     } catch (error) {
-        console.error('❌ เกิดข้อผิดพลาด:', error)
-        return { error: 'ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง' }
+        return handleActionError(error, 'submitF07')
     }
 }

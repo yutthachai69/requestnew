@@ -1,6 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /**
  * GET /api/me - ข้อมูลผู้ใช้ล็อกอิน (สำหรับฟอร์มยื่นคำร้อง pre-fill)
@@ -40,7 +41,6 @@ export async function GET() {
       }
     });
   } catch (e) {
-    console.error('GET /api/me', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'GET /api/me');
   }
 }

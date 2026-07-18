@@ -1,6 +1,7 @@
 import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleApiError } from '@/lib/api-error';
 
 /** POST /api/admin/workflows/copy - คัดลอก Workflow จากหมวดหมู่หนึ่งไปอีกหมวดหมู่ (เทียบระบบเก่า copyWorkflow) */
 export async function POST(request: NextRequest) {
@@ -48,7 +49,6 @@ export async function POST(request: NextRequest) {
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
     if (code === 'P2003') return NextResponse.json({ message: 'ไม่พบหมวดหมู่' }, { status: 400 });
-    console.error(e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/admin/workflows/copy');
   }
 }
