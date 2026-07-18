@@ -254,16 +254,10 @@ export default function NewRequestPage() {
         setSubmitError((result as { error: string }).error);
         setSubmitting(false);
       } else if (result && 'success' in result && result.success) {
-        // Success!
-        const Swal = (await import('sweetalert2')).default;
-        await Swal.fire({
-          title: 'บันทึกสำเร็จ!',
-          text: `เลขที่ใบคำร้อง: ${(result as any).workOrderNo}`,
-          icon: 'success',
-          confirmButtonText: 'ตกลง',
-          confirmButtonColor: '#2563eb', // blue-600
-        });
-        router.push('/dashboard');
+        // Success! — เด้ง toast + พาไปหน้ารายละเอียดใบที่เพิ่งสร้าง (เลขเอกสารอยู่บนหน้านั้น ไม่พลาด)
+        const r = result as { workOrderNo?: string; id?: number };
+        // เด้งไปหน้ารายละเอียด พร้อม flag ?created=1 ให้หน้านั้นโชว์แบนเนอร์สำเร็จ
+        router.push(r.id ? `/request/${r.id}?created=1` : '/dashboard');
       }
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');

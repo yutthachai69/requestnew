@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import { useNotification } from '@/app/context/NotificationContext';
@@ -53,6 +53,15 @@ export default function RequestDetailPage() {
   const params = useParams();
   const id = params?.id as string;
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const [showCreated, setShowCreated] = useState(false);
+  useEffect(() => {
+    if (searchParams.get('created') === '1') {
+      setShowCreated(true);
+      const t = setTimeout(() => setShowCreated(false), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [searchParams]);
   const { showNotification } = useNotification();
   const { refresh, notifications, markAsRead } = useAppNotification();
   const currentUserId = session?.user ? Number((session.user as { id?: string }).id) : null;
@@ -247,6 +256,24 @@ export default function RequestDetailPage() {
         </div>
       </div>
 
+      {/* Created Success Banner — โชว์เมื่อเพิ่งสร้างคำร้องเสร็จ (?created=1) */}
+      {showCreated && (
+        <div className="mx-auto max-w-4xl mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+          <svg className="w-6 h-6 text-green-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1">
+            <p className="font-semibold text-green-800">สร้างคำร้องสำเร็จ</p>
+            <p className="text-sm text-green-700 mt-1">
+              เลขที่เอกสาร: <span className="font-bold">{request.workOrderNo ?? `#${request.id}`}</span> — ระบบส่งให้ผู้อนุมัติขั้นแรกแล้ว
+            </p>
+          </div>
+          <button type="button" onClick={() => setShowCreated(false)} className="text-green-400 hover:text-green-600 shrink-0" title="ปิด">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
       {/* Revision Banner */}
       {request.status === 'REVISION' && currentUserId != null && (request.requesterId === currentUserId || request.requester?.id === currentUserId) && (
         <div className="mx-auto max-w-4xl mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
@@ -262,7 +289,7 @@ export default function RequestDetailPage() {
 
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 min-w-0">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
             <F07FormPrint request={f07Request} signatures={signatures} resolvedBy={resolvedBy} resolvedAt={resolvedAt} approvedByITViewer={approvedByITViewer} itObstacles={itObstacles} />
           </div>
 
