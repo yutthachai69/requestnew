@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import F07FormPrint from '@/app/components/F07FormPrint';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
+import { parseAttachments, isImageFile, isPdfFile } from '@/lib/attachments';
 
 type RequestData = {
   workOrderNo: string | null;
@@ -41,25 +42,6 @@ function getSignaturesFromHistory(history: HistoryItem[]) {
   };
 }
 
-function parseAttachments(attachmentPath: string | null | undefined): string[] {
-  if (!attachmentPath) return [];
-  try {
-    const parsed = JSON.parse(attachmentPath);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return attachmentPath ? [attachmentPath] : [];
-  }
-}
-
-function isImageFile(path: string): boolean {
-  const ext = path.split('.').pop()?.toLowerCase();
-  return ['png', 'jpg', 'jpeg'].includes(ext || '');
-}
-
-function isPdfFile(path: string): boolean {
-  return path.toLowerCase().endsWith('.pdf');
-}
-
 export default function RequestPrintPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -73,6 +55,7 @@ export default function RequestPrintPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [includeAttachments, setIncludeAttachments] = useState(true);
 
   useEffect(() => {
@@ -110,119 +93,123 @@ export default function RequestPrintPage() {
     };
   }, [id]);
 
-  const handleExportPdfClient = async () => {
+  // สร้าง PDF (ฟอร์ม + ไฟล์แนบ) เป็น bytes — ใช้ร่วมกันทั้งปุ่ม "ดาวน์โหลด" และ "พิมพ์"
+  // เพื่อให้หน้าตาผลลัพธ์ทั้งสองปุ่มเหมือนกันเป๊ะ
+  const buildPdfBytes = async (): Promise<Uint8Array | null> => {
     const wrapper = formRef.current;
     const el = wrapper?.querySelector<HTMLElement>('[id="export-form-inner"]') ?? wrapper;
-    if (!el || !request) return;
-    
+    if (!el || !request) return null;
+
+    // html2canvas-pro: fork ที่รองรับสี oklch ของ Tailwind v4 (ตัวเดิม html2canvas เรนเดอร์ oklch เพี้ยน)
+    const html2canvas = (await import('html2canvas-pro')).default;
+    const { jsPDF } = await import('jspdf');
+
+    // กำหนดขนาดจำลองให้ html2canvas จับภาพได้เต็มแผ่น 100% (ป้องกันจอเล็กบีบฟอร์ม)
+    const targetWidth = 794;
+
+    const canvas = await html2canvas(el, {
+      scale: 3,
+      useCORS: true,
+      logging: false,
+      width: targetWidth,
+      height: el.scrollHeight,
+      windowWidth: targetWidth,
+      ignoreElements: (element) => element.hasAttribute('data-hide-on-pdf'),
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+    const pdfW = 210;
+    const pdfH = 297; // A4 height — หน้าเป็น A4 เต็มแผ่น ไม่ใช่ตัดตามสัดส่วนฟอร์ม
+    const imgH = pdfW * (canvas.height / canvas.width); // ความสูงฟอร์มตามสัดส่วนจริง
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, imgH); // วางฟอร์มชิดบน กว้างเต็มหน้า
+
+    const pdfAttachmentsToMerge: ArrayBuffer[] = [];
+
+    if (includeAttachments && request.attachmentPath) {
+      const attachments = parseAttachments(request.attachmentPath);
+
+      for (const attachmentPath of attachments) {
+        try {
+          const response = await fetch(attachmentPath, { credentials: 'same-origin' });
+          if (!response.ok) continue;
+
+          if (isImageFile(attachmentPath)) {
+            const blob = await response.blob();
+            const dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+
+            pdf.addPage();
+
+            const img = new Image();
+            await new Promise<void>((resolve) => {
+              img.onload = () => resolve();
+              img.src = dataUrl;
+            });
+
+            const imgAspect = img.height / img.width;
+            const attachMargin = 5;
+            const maxW = pdfW - attachMargin * 2;
+            const maxH = pdfH - attachMargin * 2;
+            let imgW = maxW;
+            let imgH = imgW * imgAspect;
+
+            if (imgH > maxH) {
+              imgH = maxH;
+              imgW = imgH / imgAspect;
+            }
+
+            const x = (pdfW - imgW) / 2;
+            pdf.addImage(dataUrl, 'PNG', x, attachMargin, imgW, imgH);
+
+          } else if (isPdfFile(attachmentPath)) {
+            const buffer = await response.arrayBuffer();
+            pdfAttachmentsToMerge.push(buffer);
+          }
+        } catch (e) {
+          console.warn('Failed to process attachment:', attachmentPath, e);
+        }
+      }
+    }
+
+    if (pdfAttachmentsToMerge.length > 0) {
+      const { PDFDocument } = await import('pdf-lib');
+      const mainPdfBytes = pdf.output('arraybuffer');
+      const finalPdfDoc = await PDFDocument.load(mainPdfBytes);
+
+      for (const buffer of pdfAttachmentsToMerge) {
+        try {
+          const attachDoc = await PDFDocument.load(buffer);
+          const copiedPages = await finalPdfDoc.copyPages(attachDoc, attachDoc.getPageIndices());
+          copiedPages.forEach((page) => finalPdfDoc.addPage(page));
+        } catch (err) {
+          console.error('Error merging PDF attachment', err);
+        }
+      }
+
+      return await finalPdfDoc.save();
+    }
+
+    return new Uint8Array(pdf.output('arraybuffer'));
+  };
+
+  const handleExportPdfClient = async () => {
+    if (!request) return;
     setDownloading(true);
     try {
-      // html2canvas-pro: fork ที่รองรับสี oklch ของ Tailwind v4 (ตัวเดิม html2canvas เรนเดอร์ oklch เพี้ยน)
-      const html2canvas = (await import('html2canvas-pro')).default;
-      const { jsPDF } = await import('jspdf');
-
-      // กำหนดขนาดจำลองให้ html2canvas จับภาพได้เต็มแผ่น 100% (ป้องกันจอเล็กบีบฟอร์ม)
-      const targetWidth = 794;
-
-      const canvas = await html2canvas(el, {
-        scale: 3,
-        useCORS: true,
-        logging: false,
-        width: targetWidth,
-        height: el.scrollHeight,
-        windowWidth: targetWidth,
-        ignoreElements: (element) => element.hasAttribute('data-hide-on-pdf'),
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-
-      const pdfW = 210;
-      const pdfH = 297; // A4 height — หน้าเป็น A4 เต็มแผ่น (ให้ตรงกับปุ่ม "พิมพ์ฟอร์ม") ไม่ใช่ตัดตามสัดส่วนฟอร์ม
-      const imgH = pdfW * (canvas.height / canvas.width); // ความสูงฟอร์มตามสัดส่วนจริง
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, imgH); // วางฟอร์มชิดบน กว้างเต็มหน้า
-
-      const pdfAttachmentsToMerge: ArrayBuffer[] = [];
-
-      if (includeAttachments && request.attachmentPath) {
-        const attachments = parseAttachments(request.attachmentPath);
-
-        for (const attachmentPath of attachments) {
-          try {
-            const response = await fetch(attachmentPath, { credentials: 'same-origin' });
-            if (!response.ok) continue;
-
-            if (isImageFile(attachmentPath)) {
-              const blob = await response.blob();
-              const dataUrl = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(blob);
-              });
-
-              pdf.addPage();
-
-              const img = new Image();
-              await new Promise<void>((resolve) => {
-                img.onload = () => resolve();
-                img.src = dataUrl;
-              });
-
-              const imgAspect = img.height / img.width;
-              const attachMargin = 5;
-              const maxW = pdfW - attachMargin * 2;
-              const maxH = pdfH - attachMargin * 2;
-              let imgW = maxW;
-              let imgH = imgW * imgAspect;
-
-              if (imgH > maxH) {
-                imgH = maxH;
-                imgW = imgH / imgAspect;
-              }
-
-              const x = (pdfW - imgW) / 2;
-              pdf.addImage(dataUrl, 'PNG', x, attachMargin, imgW, imgH);
-
-              pdf.setFontSize(10);
-              pdf.text(`ไฟล์แนบ: ${attachmentPath.split('/').pop()}`, attachMargin, pdfH - 5);
-
-            } else if (isPdfFile(attachmentPath)) {
-              const buffer = await response.arrayBuffer();
-              pdfAttachmentsToMerge.push(buffer);
-            }
-          } catch (e) {
-            console.warn('Failed to process attachment:', attachmentPath, e);
-          }
-        }
-      }
-
-      if (pdfAttachmentsToMerge.length > 0) {
-        const { PDFDocument } = await import('pdf-lib');
-        const mainPdfBytes = pdf.output('arraybuffer');
-        const finalPdfDoc = await PDFDocument.load(mainPdfBytes);
-
-        for (const buffer of pdfAttachmentsToMerge) {
-          try {
-            const attachDoc = await PDFDocument.load(buffer);
-            const copiedPages = await finalPdfDoc.copyPages(attachDoc, attachDoc.getPageIndices());
-            copiedPages.forEach((page) => finalPdfDoc.addPage(page));
-          } catch (err) {
-            console.error('Error merging PDF attachment', err);
-          }
-        }
-
-        const mergedBytes = await finalPdfDoc.save();
-        const blob = new Blob([mergedBytes as unknown as BlobPart], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `F07-${request.workOrderNo ?? id}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } else {
-        pdf.save(`F07-${request.workOrderNo ?? id}.pdf`);
-      }
-
+      const bytes = await buildPdfBytes();
+      if (!bytes) return;
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `F07-${request.workOrderNo ?? id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Export failed:', e);
       setError(e instanceof Error ? e.message : 'ส่งออก PDF ไม่สำเร็จ');
@@ -231,8 +218,47 @@ export default function RequestPrintPage() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  // พิมพ์ฟอร์มโดยสร้าง PDF ตัวเดียวกับปุ่มดาวน์โหลด แล้วส่งเข้าเครื่องพิมพ์ผ่าน iframe ที่ซ่อนไว้
+  // (ไม่ใช้ window.print() บน DOM เพื่อให้ผลลัพธ์เหมือนไฟล์ที่ดาวน์โหลดเป๊ะ)
+  const handlePrint = async () => {
+    if (!request) return;
+    setPrinting(true);
+    try {
+      const bytes = await buildPdfBytes();
+      if (!bytes) return;
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = url;
+
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (err) {
+          console.error('Print failed:', err);
+        }
+        // เก็บกวาด iframe + object URL หลังปิดกล่องพิมพ์
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          iframe.remove();
+        }, 60000);
+      };
+
+      document.body.appendChild(iframe);
+    } catch (e) {
+      console.error('Print failed:', e);
+      setError(e instanceof Error ? e.message : 'พิมพ์ฟอร์มไม่สำเร็จ');
+    } finally {
+      setPrinting(false);
+    }
   };
 
   const attachments = parseAttachments(request?.attachmentPath);
@@ -265,6 +291,8 @@ export default function RequestPrintPage() {
         @media print {
           @page { size: A4 portrait; margin: 0; }
           html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
+          /* กัน scrollbar (overflow-y-auto/overflow-x-auto) โผล่ติดลงกระดาษตอนพิมพ์ */
+          main, .overflow-y-auto, .overflow-x-auto { overflow: visible !important; }
         }
       `}</style>
 
@@ -308,9 +336,20 @@ export default function RequestPrintPage() {
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-full text-sm font-medium shadow-sm hover:bg-gray-50 transition-all duration-200"
+            disabled={printing}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-full text-sm font-medium shadow-sm hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200"
           >
-            พิมพ์ฟอร์ม
+            {printing ? (
+              <>
+                <svg className="w-5 h-5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                กำลังเตรียมพิมพ์...
+              </>
+            ) : (
+              'พิมพ์ฟอร์ม'
+            )}
           </button>
         </div>
       </div>

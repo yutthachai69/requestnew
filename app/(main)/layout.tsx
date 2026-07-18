@@ -47,7 +47,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area */}
-      <div className={`flex flex-col min-h-screen pl-0 ${contentPadding}`}>
+      <div className={`flex flex-col min-h-screen pl-0 print:!pl-0 ${contentPadding}`}>
         <div className="print:hidden"><AppHeader /></div>
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
