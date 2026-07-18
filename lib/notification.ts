@@ -31,3 +31,19 @@ export async function createNotificationForRole(roleName: string, message: strin
     // For now, keep it simple or implement later if needed.
     // Usually notifications target specific next approvers.
 }
+
+/**
+ * ทำเครื่องหมายอ่านแล้วสำหรับแจ้งเตือนของ user คนนี้ที่ผูกกับคำร้องที่เพิ่งดำเนินการ
+ * (เช่น "มีใบงานรออนุมัติ" — เมื่ออนุมัติ/ปฏิเสธไปแล้วถือว่าอ่านแล้วโดยปริยาย ไม่ว่าจะทำผ่านช่องทางไหน)
+ */
+export async function markNotificationsReadForRequests(userId: number, requestIds: number[]) {
+    if (requestIds.length === 0) return;
+    try {
+        await prisma.notification.updateMany({
+            where: { userId, requestId: { in: requestIds }, isRead: false },
+            data: { isRead: true },
+        });
+    } catch (error) {
+        console.error(`[Notification] Failed to mark read for User ${userId}:`, error);
+    }
+}

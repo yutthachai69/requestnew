@@ -14,7 +14,7 @@ import {
 import { generateRequestNumber } from '@/lib/document-number';
 import { sendApprovalEmail } from '@/lib/mail';
 import { getApprovalTemplate, getRevisionEmail, getCompletionEmail } from '@/lib/email-helper';
-import { createNotification } from '@/lib/notification';
+import { createNotification, markNotificationsReadForRequests } from '@/lib/notification';
 import { postToPowerAutomate } from '@/lib/power-automate';
 
 export const ALLOWED_ACTIONS = ['APPROVE', 'REJECT', 'IT_PROCESS', 'CONFIRM_COMPLETE'] as const;
@@ -455,6 +455,9 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
       input.source
     );
     await sendPostApprovalNotifications(req, result, correctionTypeIds);
+    // ผู้กระทำเพิ่งอนุมัติ/ปฏิเสธคำร้องนี้ไปแล้ว — แจ้งเตือน "รออนุมัติ" เดิมของเขาถือว่าอ่านแล้ว
+    // (ครอบคลุมทุกช่องทาง: dashboard, ลิงก์อีเมล)
+    await markNotificationsReadForRequests(input.actor.userId, [req.id]);
     return { ok: true, ...result };
   } catch (e) {
     if (e instanceof Error && e.message === 'ALREADY_APPROVED') {

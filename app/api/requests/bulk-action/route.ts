@@ -3,9 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getCanonicalRoleNamesForApprover } from '@/lib/auth-constants';
 import { getNextApproversForStatus } from '@/lib/workflow';
-import { createNotification } from '@/lib/notification';
+import { createNotification, markNotificationsReadForRequests } from '@/lib/notification';
 import { sendApprovalEmail } from '@/lib/mail';
 import { getApprovalTemplate, getRevisionEmail } from '@/lib/email-helper';
+import { handleApiError } from '@/lib/api-error';
 
 /** POST /api/requests/bulk-action - ดำเนินการกลุ่ม (อนุมัติ/ปฏิเสธหลายรายการ) */
 export async function POST(request: NextRequest) {
@@ -184,6 +185,9 @@ export async function POST(request: NextRequest) {
       ),
     ]);
 
+    // ผู้กระทำเพิ่งอนุมัติ/ปฏิเสธคำร้องเหล่านี้แบบกลุ่มไปแล้ว — แจ้งเตือน "รออนุมัติ" เดิมของเขาถือว่าอ่านแล้ว
+    await markNotificationsReadForRequests(Number(userId), allowedRequests.map((r) => r.id));
+
     // ─── ส่ง Notification + Email ด้วย Timeout Race (maximum 8 วินาที) ───
     // ถ้าส่งเสร็จก่อน  8 วินาที → รอแล้ว Return พร้อมกัน ✔เชื่อถือได้
     // ถ้าช้าเกิน 8 วินาที → Return ก่อน แล้ว Background ทำต่อ ✔ไม่บล็อค User
@@ -259,7 +263,6 @@ export async function POST(request: NextRequest) {
       skipped: skippedRequests,
     });
   } catch (e) {
-    console.error('POST /api/requests/bulk-action', e);
-    return NextResponse.json({ message: 'Server error' }, { status: 500 });
+    return handleApiError(e, 'POST /api/requests/bulk-action');
   }
 }
