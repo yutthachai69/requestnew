@@ -103,11 +103,19 @@ const sendViaAPI = async (emailData: EmailData, to: string[]): Promise<EmailSend
     replyTo: emailData.replyTo,
   };
 
+  const configuredTimeout = Number(process.env.EMAIL_API_TIMEOUT_MS ?? 8000);
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout
+    : 8000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     const text = await res.text();
@@ -122,6 +130,8 @@ const sendViaAPI = async (emailData: EmailData, to: string[]): Promise<EmailSend
     const detail = error instanceof Error ? error.message : String(error);
     console.error('❌ ส่งอีเมลผ่าน API ล้มเหลว:', detail);
     return { ok: false, reason: 'api_failed', detail };
+  } finally {
+    clearTimeout(timeout);
   }
 };
 

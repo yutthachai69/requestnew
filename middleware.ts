@@ -7,9 +7,17 @@ import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Global Rate Limit: 100 requests per minute per IP
-  const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const rateLimitKey = getRateLimitKey(ip, 'global');
+  // Use the signed session identity for rate limiting. Do not trust
+  // x-forwarded-for because a direct client can spoof it.
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+
+  // Global Rate Limit: 100 requests per minute per user or anonymous bucket.
+  // A shared store is still required when deploying multiple nodes.
+  const identity = token?.sub ? `user:${token.sub}` : 'anonymous';
+  const rateLimitKey = getRateLimitKey(identity, 'global');
   const rateLimitResult = checkRateLimit(rateLimitKey, {
     maxRequests: 100, // 100 requests
     windowSec: 60,    // per 60 seconds (1 minute)
@@ -20,10 +28,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // เรียก getToken ครั้งเดียวแล้วใช้ซ้ำ
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
   const role = token?.roleName as string | undefined;
 
   // Helper: redirect ไป login

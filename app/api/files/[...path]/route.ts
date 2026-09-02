@@ -1,5 +1,7 @@
 import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { approverRoles } from '@/lib/auth-constants';
 import { readFile, getMimeType, getFilePath } from '@/lib/storage';
 import { handleApiError } from '@/lib/api-error';
 
@@ -35,6 +37,21 @@ export async function GET(
 
     if (!filepath) {
         return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
+
+    // A login alone is not enough to read an upload. The file must be attached
+    // to a request that the current user is allowed to view.
+    const ownerRequest = await prisma.iTRequestF07.findFirst({
+        where: { attachmentPath: { contains: apiPath } },
+        select: { requesterId: true },
+    });
+    if (!ownerRequest) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
+    const canViewAnyRequest = auth.roleName === 'Admin'
+        || (auth.roleName != null && approverRoles.includes(auth.roleName));
+    if (!canViewAnyRequest && ownerRequest.requesterId !== auth.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     try {

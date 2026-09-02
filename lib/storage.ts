@@ -17,6 +17,13 @@ const MAGIC_BYTES: Record<string, number[][]> = {
     '.pdf': [[0x25, 0x50, 0x44, 0x46]],                          // %PDF
 };
 
+export class FileValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'FileValidationError';
+    }
+}
+
 /**
  * ตรวจ magic bytes ว่าเนื้อหาไฟล์ตรงกับ extension หรือไม่
  */
@@ -50,6 +57,22 @@ export function isAllowedFileType(filename: string): boolean {
  */
 export function isFileSizeValid(size: number): boolean {
     return size <= MAX_FILE_SIZE;
+}
+
+/** Validate an upload without changing the filesystem. */
+export async function validateFile(file: File): Promise<void> {
+    if (!isAllowedFileType(file.name)) {
+        throw new FileValidationError('File type is not allowed');
+    }
+    if (!isFileSizeValid(file.size)) {
+        throw new FileValidationError('File is larger than 10MB');
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const ext = path.extname(file.name).toLowerCase();
+    if (!validateMagicBytes(buffer, ext)) {
+        throw new FileValidationError('File content does not match its extension');
+    }
 }
 
 /**

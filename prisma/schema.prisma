@@ -149,6 +149,8 @@ model DocConfig {
   lastRunningNumber Int      @default(0)
   categoryId        Int
   category          Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([categoryId, year])
 }
 
 model EmailTemplate {

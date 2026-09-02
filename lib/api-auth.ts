@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth-cache';
+import { prisma } from '@/lib/prisma';
 
 export type AuthUser = {
   id: number;
@@ -20,11 +21,19 @@ export async function getAuthUser(): Promise<AuthUser | null> {
   const id = Number((session.user as { id?: string }).id);
   if (!Number.isFinite(id) || id < 1) return null;
 
+  // Re-check the account server-side so a disabled user or changed role cannot
+  // keep using an old JWT until it expires.
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { isActive: true, email: true, fullName: true, role: { select: { roleName: true } } },
+  });
+  if (!user?.isActive) return null;
+
   return {
     id,
-    roleName: (session.user as { roleName?: string }).roleName ?? null,
-    email: session.user.email ?? null,
-    name: session.user.name ?? null,
+    roleName: user.role.roleName,
+    email: user.email ?? null,
+    name: user.fullName ?? null,
   };
 }
 

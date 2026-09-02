@@ -11,9 +11,18 @@ const {
   MSSQL_DATABASE = "requestonline",
   MSSQL_USER = "requestapp",
   MSSQL_PASSWORD = "",
+  MSSQL_ENCRYPT = "true",
 } = process.env;
 
-const url = `sqlserver://${MSSQL_SERVER}:${MSSQL_PORT};database=${MSSQL_DATABASE};user=${MSSQL_USER};password=${MSSQL_PASSWORD};encrypt=true;trustServerCertificate=true`;
+// Encode credentials so passwords containing `@`, `;`, `:` or other URL
+// delimiters are passed to Prisma CLI exactly as configured.
+// SQL Server uses a JDBC-style semicolon connection string. Values containing
+// delimiters must be wrapped in curly braces; URL-encoding is not equivalent.
+function escapeSqlServerValue(value: string): string {
+  return /[:\\=;/[\]{} ]/.test(value) ? `{${value}}` : value;
+}
+
+const url = `sqlserver://${MSSQL_SERVER}:${MSSQL_PORT};database=${escapeSqlServerValue(MSSQL_DATABASE)};user=${escapeSqlServerValue(MSSQL_USER)};password=${escapeSqlServerValue(MSSQL_PASSWORD)};encrypt=${MSSQL_ENCRYPT};trustServerCertificate=true`;
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
