@@ -2,6 +2,7 @@ import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleApiError } from '@/lib/api-error';
+import { validateSignatureDataUrl } from '@/lib/signature';
 
 export async function POST(req: Request) {
   try {
@@ -14,8 +15,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'ข้อมูลลายเซ็นไม่ถูกต้อง' }, { status: 400 });
     }
 
-    if (signatureData && !signatureData.startsWith('data:image/')) {
-      return NextResponse.json({ error: 'รูปแบบไฟล์ลายเซ็นไม่ถูกต้อง' }, { status: 400 });
+    // ตรวจซ้ำฝั่งเซิร์ฟเวอร์: ขนาด ชนิดไฟล์ และ magic bytes
+    // (ฝั่ง client ตรวจแล้ว แต่ API ถูกเรียกตรงได้)
+    if (signatureData) {
+      const validation = validateSignatureDataUrl(signatureData);
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.message }, { status: 400 });
+      }
     }
 
     await prisma.user.update({
