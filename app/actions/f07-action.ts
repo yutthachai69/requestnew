@@ -1,9 +1,9 @@
 // actions/f07-action.ts
 'use server'
 
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { getAuthUser } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { sendApprovalEmail } from '@/lib/mail'
@@ -11,16 +11,18 @@ import { getApprovalTemplate } from '@/lib/email-helper'
 import { getFirstApproverForCategoryFromTransitions, getFirstApproverForCategory, getDeptManagerEmail } from '@/lib/workflow';
 import { requesterRoles } from '@/lib/auth-constants';
 
-import { saveFile } from '@/lib/storage';
+import { saveFile, deleteFile } from '@/lib/storage';
 import { handleActionError } from '@/lib/api-error';
+import { withTransactionRetry, TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
+import { generateRequestNumber } from '@/lib/document-number';
 
 export async function submitF07(formData: FormData) {
-    const session = await getServerSession(authOptions)
-    const userId = session?.user ? (session.user as { id?: string }).id : null
-    if (!userId) {
+    const auth = await getAuthUser()
+    if (!auth) {
         redirect('/login?callbackUrl=/request/new')
     }
-    const roleName = (session?.user as { roleName?: string })?.roleName
+    const userId = String(auth.id)
+    const roleName = auth.roleName
     if (roleName == null || !requesterRoles.includes(roleName)) {
         redirect('/dashboard')
     }
@@ -38,50 +40,33 @@ export async function submitF07(formData: FormData) {
     if (systemType === 'อื่นๆ' && systemTypeOther) systemType = systemTypeOther
     const isMoneyRelated = formData.get('isMoneyRelated') === 'true'
 
-    // 2. คำนวณปี พ.ศ. ปัจจุบัน
-    const currentYearBE = new Date().getFullYear() + 543
-    const shortYear = currentYearBE.toString().slice(-2)
+    // 3. เขียนไฟล์แนบลงดิสก์ *ก่อน* เปิด transaction
+    //
+    // เดิมเรียก saveFile() อยู่ข้างใน SERIALIZABLE transaction ทำให้ transaction
+    // ถูกถือค้างไว้ตลอดเวลาที่เขียนไฟล์ (ช้าและไม่แน่นอน เพราะขึ้นกับดิสก์และ
+    // ขนาดไฟล์) ซึ่งไปหน่วงคนอื่นที่กำลังออกเลขเอกสารตัวเดียวกัน และทำให้ชน
+    // P2028 ("query cannot be executed on an expired transaction") เป็นครั้งคราว
+    // ตอนนี้ transaction เหลือแต่งาน DB ล้วน ๆ
+    const attachmentFiles = (formData.getAll('attachments') as File[]).filter(
+        (file) => file.size > 0 && file.name !== 'undefined'
+    );
+    const savedPaths: string[] = [];
+    for (const file of attachmentFiles) {
+        try {
+            savedPaths.push(await saveFile(file));
+        } catch (e) {
+            console.error('File upload failed:', e);
+        }
+    }
+    const attachmentPath = savedPaths.length > 0 ? JSON.stringify(savedPaths) : null;
 
     try {
-        // 3. บันทึกลงฐานข้อมูล (Transaction)
-        const newRequest = await prisma.$transaction(async (tx) => {
+        // 4. บันทึกลงฐานข้อมูล (Transaction — เฉพาะงาน DB)
+        const newRequest = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
             // --- ส่วนที่ 1: รันเลขที่เอกสาร ---
-            let config = await tx.docConfig.findFirst({
-                where: { categoryId: categoryId, year: currentYearBE }
-            })
-
-            if (!config) {
-                // หา prefix จากปีก่อนหน้า (ถ้ามี)
-                const lastConfig = await tx.docConfig.findFirst({
-                    where: { categoryId },
-                    orderBy: { year: 'desc' },
-                })
-                // Category code mapping (fallback)
-                const CATEGORY_CODES: Record<number, string> = {
-                    1: 'IT-F07-GN',  // ทั่วไป
-                    2: 'IT-F07-MA',  // ฝ่ายไร่
-                    3: 'IT-F07-WB',  // ห้องชั่งอ้อย
-                    4: 'IT-F07-TC',  // ศูนย์ขนถ่าย
-                    5: 'IT-F07-WH',  // คลังสินค้า
-                }
-                const prefix = lastConfig?.prefix || CATEGORY_CODES[categoryId] || 'IT-F07'
-                config = await tx.docConfig.create({
-                    data: {
-                        categoryId: categoryId,
-                        year: currentYearBE,
-                        prefix,
-                        lastRunningNumber: 0
-                    }
-                })
-            }
-
-            const nextNumber = config.lastRunningNumber + 1
-            await tx.docConfig.update({
-                where: { id: config.id },
-                data: { lastRunningNumber: nextNumber }
-            })
-
-            const workOrderNo = `${config.prefix}-${shortYear}-${nextNumber.toString().padStart(3, '0')}`
+            // ใช้ generateRequestNumber ตัวเดียวกับเส้นทางอนุมัติ (เดิมไฟล์นี้มี
+            // ตรรกะซ้ำของตัวเอง ทำให้แก้ปัญหา deadlock ที่ DocConfig ได้ไม่ทั่วถึง)
+            const workOrderNo = await generateRequestNumber(tx, categoryId)
 
             const initialStatus = await tx.status.findFirst({
                 where: { isInitialState: true },
@@ -105,23 +90,7 @@ export async function submitF07(formData: FormData) {
                     currentStatusId,
                     requesterId,
                     approvalToken: crypto.randomUUID(),
-                    attachmentPath: await (async () => {
-                        const files = formData.getAll('attachments') as File[];
-                        if (!files.length) return null;
-
-                        const paths: string[] = [];
-                        for (const file of files) {
-                            if (file.size > 0 && file.name !== 'undefined') {
-                                try {
-                                    const path = await saveFile(file);
-                                    paths.push(path);
-                                } catch (e) {
-                                    console.error('File upload failed:', e);
-                                }
-                            }
-                        }
-                        return paths.length > 0 ? JSON.stringify(paths) : null;
-                    })(),
+                    attachmentPath,
                     ...(formData.get('correctionTypeIds') && JSON.parse(formData.get('correctionTypeIds') as string).length > 0 ? {
                         correctionTypes: {
                             create: JSON.parse(formData.get('correctionTypeIds') as string).map((id: number) => ({
@@ -131,7 +100,7 @@ export async function submitF07(formData: FormData) {
                     } : {})
                 }
             })
-        })
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, ...TRANSACTION_OPTIONS }))
 
         // Log removed)
 
@@ -155,13 +124,19 @@ export async function submitF07(formData: FormData) {
                 subject,
                 body,
                 senderName: thaiName,
-                replyTo: session?.user?.email || undefined,
+                replyTo: auth.email || undefined,
             });
             if (!sent.ok) {
                 console.error('[mail] ส่งเมลตอนสร้างคำร้องล้มเหลว:', sent);
             }
         } else {
-            console.warn('⚠️ ไม่พบผู้อนุมัติหรือไม่มีอีเมล (Workflow/หัวหน้าแผนก) — ข้ามการส่งเมล');
+            // ไม่มีใครรับคำร้องนี้ต่อ — ต้องแจ้ง Admin ไม่งั้นคำร้องจะค้างเงียบ
+            const { notifyAdminsOfStalledRequest } = await import('@/lib/notification');
+            await notifyAdminsOfStalledRequest({
+                requestId: newRequest.id,
+                workOrderNo: newRequest.workOrderNo,
+                reason: 'ไม่พบผู้อนุมัติขั้นแรก หรือผู้อนุมัติไม่มีอีเมลในระบบ (ตรวจ Workflow และหัวหน้าแผนก)',
+            });
         }
 
         revalidatePath('/dashboard')
@@ -174,6 +149,10 @@ export async function submitF07(formData: FormData) {
         }
 
     } catch (error) {
+        // คำร้องไม่ถูกบันทึก — เก็บไฟล์ที่เพิ่งเขียนไว้ทิ้ง ไม่ให้เหลือไฟล์กำพร้า
+        for (const filePath of savedPaths) {
+            await deleteFile(filePath).catch(() => undefined);
+        }
         return handleActionError(error, 'submitF07')
     }
 }
