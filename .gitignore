@@ -46,3 +46,9 @@ next-env.d.ts
 /app/generated/prisma
 /generated
 /uploads
+# ผลลัพธ์การทดสอบ (Playwright) — สร้างใหม่ได้ทุกครั้งที่รัน
+/test-results/
+/playwright-report/
+
+# log ชั่วคราวจากการดีบัก
+debug.log
