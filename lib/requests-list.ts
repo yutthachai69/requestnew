@@ -4,6 +4,7 @@ import {
   APPROVAL_DONE_ACTION_TYPES,
   REJECT_ACTION_TYPES,
 } from '@/lib/approval-actions';
+import { buildDateRangeFilter } from '@/lib/date-range';
 
 export type RequestsListParams = {
   categoryId?: string;
@@ -101,14 +102,9 @@ export async function fetchRequestsList(
     (where as { status?: { not: string } }).status = { not: excludeStatus };
   }
 
-  if (startDate || endDate) {
-    (where as { createdAt?: { gte?: Date; lte?: Date } }).createdAt = {};
-    if (startDate) (where.createdAt as { gte?: Date }).gte = new Date(startDate);
-    if (endDate) {
-      const d = new Date(endDate);
-      d.setHours(23, 59, 59, 999);
-      (where.createdAt as { lte?: Date }).lte = d;
-    }
+  const createdAtFilter = buildDateRangeFilter(startDate, endDate);
+  if (createdAtFilter) {
+    (where as { createdAt?: { gte?: Date; lte?: Date } }).createdAt = createdAtFilter;
   }
 
   let searchFilter: Record<string, unknown>[] | null = null;

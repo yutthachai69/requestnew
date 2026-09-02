@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getDepartmentFilter } from '@/lib/get-department-filter';
 import { handleApiError } from '@/lib/api-error';
+import { buildDateRangeFilter, isValidDateInput } from '@/lib/date-range';
 
 /** GET /api/dashboard/report-data - ข้อมูลรายงาน (filter ตาม role + วันที่) */
 export async function GET(request: NextRequest) {
@@ -15,14 +16,17 @@ export async function GET(request: NextRequest) {
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
 
+  if (startDate && !isValidDateInput(startDate)) {
+    return NextResponse.json({ error: 'Invalid startDate' }, { status: 400 });
+  }
+  if (endDate && !isValidDateInput(endDate)) {
+    return NextResponse.json({ error: 'Invalid endDate' }, { status: 400 });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = {};
-  if (startDate) where.createdAt = { ...where.createdAt, gte: new Date(startDate) };
-  if (endDate) {
-    const d = new Date(endDate);
-    d.setHours(23, 59, 59, 999);
-    where.createdAt = { ...where.createdAt, lte: d };
-  }
+  const createdAt = buildDateRangeFilter(startDate, endDate);
+  if (createdAt) where.createdAt = createdAt;
 
   try {
     // ─── 1) หา department filter (2 round trips แทน 3 เดิม) ───

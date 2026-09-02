@@ -2,6 +2,7 @@ import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleApiError } from '@/lib/api-error';
+import { buildDateRangeFilter, isValidDateInput } from '@/lib/date-range';
 
 /** GET /api/dashboard/category-stats?startDate=&endDate= - สถิติตามหมวดหมู่ (สำหรับ Welcome/Chart) */
 export async function GET(request: NextRequest) {
@@ -15,16 +16,13 @@ export async function GET(request: NextRequest) {
   const startDateParam = searchParams.get('startDate')?.trim();
   const endDateParam = searchParams.get('endDate')?.trim();
 
-  let dateFilter: Record<string, unknown> | undefined;
-  if (startDateParam || endDateParam) {
-    dateFilter = {};
-    if (startDateParam) (dateFilter as any).gte = new Date(startDateParam);
-    if (endDateParam) {
-      const d = new Date(endDateParam);
-      d.setHours(23, 59, 59, 999);
-      (dateFilter as any).lte = d;
-    }
+  if (startDateParam && !isValidDateInput(startDateParam)) {
+    return NextResponse.json({ error: 'Invalid startDate' }, { status: 400 });
   }
+  if (endDateParam && !isValidDateInput(endDateParam)) {
+    return NextResponse.json({ error: 'Invalid endDate' }, { status: 400 });
+  }
+  const dateFilter = buildDateRangeFilter(startDateParam, endDateParam);
 
   try {
     // Build request filter for date range

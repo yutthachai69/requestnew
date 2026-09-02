@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { approverRoles } from '@/lib/auth-constants';
+import { buildDateRangeFilter } from '@/lib/date-range';
 
 export type DashboardStatsResult = {
   totalRequests: number;
@@ -16,16 +17,7 @@ export async function fetchDashboardStatistics(
   const isAdmin = roleName === 'Admin';
   const isApprover = !!roleName && approverRoles.includes(roleName);
 
-  let dateFilter: Record<string, unknown> | undefined;
-  if (dateRange?.startDate || dateRange?.endDate) {
-    dateFilter = {};
-    if (dateRange.startDate) (dateFilter as { gte?: Date }).gte = new Date(dateRange.startDate);
-    if (dateRange.endDate) {
-      const d = new Date(dateRange.endDate);
-      d.setHours(23, 59, 59, 999);
-      (dateFilter as { lte?: Date }).lte = d;
-    }
-  }
+  const dateFilter = buildDateRangeFilter(dateRange?.startDate, dateRange?.endDate);
 
   const currentUser = await prisma.user.findUnique({
     where: { id: userId },
