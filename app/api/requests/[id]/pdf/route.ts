@@ -6,6 +6,7 @@ import fontkit from '@pdf-lib/fontkit';
 import * as fs from 'fs';
 import * as path from 'path';
 import { handleApiError } from '@/lib/api-error';
+import { fitTextToBox, truncateToWidth } from '@/lib/pdf-text';
 
 /**
  * GET /api/requests/[id]/pdf
@@ -163,6 +164,13 @@ async function buildF07Pdf(req: {
   const t = (s: string) => (useThaiFont ? s : sanitizeForWinAnsi(s));
   const LINE_HEIGHT_THAI = 18;
 
+  /**
+   * ย่อข้อความบรรทัดเดียวให้ไม่ล้นคอลัมน์
+   * ช่องเหล่านี้วางด้วยพิกัด x ตายตัว ถ้าค่ายาวเกินจะไปทับช่องถัดไป
+   */
+  const fitOneLine = (value: string, maxWidth: number) =>
+    truncateToWidth(t(value), maxWidth, (s) => font.widthOfTextAtSize(s, size));
+
   // โหลดโลโก้ TSM (ถ้ามี)
   let logoImage: Awaited<ReturnType<PDFDocument['embedPng']>> | null = null;
   const logoPath = path.join(process.cwd(), 'public', 'tsmlogo.png');
@@ -229,7 +237,7 @@ async function buildF07Pdf(req: {
     font: fontBold,
     color: black,
   });
-  page.drawText(t(`สถานที่ตั้ง: ${req.location?.name ?? ''}`), {
+  page.drawText(fitOneLine(`สถานที่ตั้ง: ${req.location?.name ?? ''}`, 175), {
     x: margin + contentWidth - 180,
     y: HEADER_TOP - 34,
     size: size,
@@ -259,10 +267,10 @@ async function buildF07Pdf(req: {
     borderColor: black,
   });
   const userTextY = USER_BOTTOM + (USER_TOP - USER_BOTTOM) / 2 - size / 2 + 10;
-  page.drawText(t(`ชื่อภาษาไทย: ${req.thaiName}`), { x: margin + 10, y: userTextY, size, font });
-  page.drawText(t(`แผนก: ${req.department?.name ?? ''}`), { x: margin + 220, y: userTextY, size, font });
+  page.drawText(fitOneLine(`ชื่อภาษาไทย: ${req.thaiName}`, 205), { x: margin + 10, y: userTextY, size, font });
+  page.drawText(fitOneLine(`แผนก: ${req.department?.name ?? ''}`, 125), { x: margin + 220, y: userTextY, size, font });
   page.drawText(t('ตำแหน่ง: ........................'), { x: margin + 350, y: userTextY, size, font });
-  page.drawText(t(`โทรศัพท์: ${req.phone ?? ''}`), { x: margin + contentWidth - 100, y: userTextY, size, font });
+  page.drawText(fitOneLine(`โทรศัพท์: ${req.phone ?? ''}`, 95), { x: margin + contentWidth - 100, y: userTextY, size, font });
 
   page.drawLine({
     start: { x: margin, y: USER_BOTTOM },
@@ -327,7 +335,7 @@ async function buildF07Pdf(req: {
   if (!isErp) page.drawText('✓', { x: checkX2, y: checkY, size: checkSize, font: fontBold });
   page.drawText(t('อื่นๆ (ระบุ)'), { x: margin + 155, y: cbY + 1, size, font });
   if (req.systemType && !isErp) {
-    page.drawText(t(req.systemType), { x: margin + 230, y: cbY + 1, size, font });
+    page.drawText(fitOneLine(req.systemType, contentWidth - 230), { x: margin + 230, y: cbY + 1, size, font });
   }
 
   const probBoxW = contentWidth * 0.65;
@@ -364,7 +372,18 @@ async function buildF07Pdf(req: {
   });
 
   const rowHeight = (probBoxH - 22) / 7;
-  const problemLines = (req.problemDetail || '').split('\n').slice(0, 7);
+
+  // ตัดบรรทัดตามความกว้างจริงของฟอนต์ ไม่ใช่แค่ split('\n')
+  // เดิมบรรทัดยาววาดทะลุกรอบและทะลุขอบกระดาษ (pdf-lib ไม่ตัดให้)
+  // และเนื้อหาเกิน 7 บรรทัดหายไปเงียบ ๆ — ตอนนี้ส่วนที่ล้นไปต่อหน้าถัดไป
+  const problemTextWidth = probBoxW - 12;
+  const { lines: problemLines, overflow: problemOverflow } = fitTextToBox(
+    req.problemDetail || '',
+    problemTextWidth,
+    7,
+    (s) => font.widthOfTextAtSize(t(s), size)
+  );
+
   for (let i = 0; i < 7; i++) {
     const rowBottomY = probBoxBottom + (6 - i) * rowHeight;
     const lineY = rowBottomY + 2;
@@ -476,6 +495,42 @@ async function buildF07Pdf(req: {
     size: 9,
     font: fontBold,
   });
+
+  // ----- หน้าต่อ (เมื่อรายละเอียดปัญหายาวเกิน 7 บรรทัดของแบบฟอร์ม) -----
+  // แบบฟอร์มมีเส้นบรรทัดตายตัว 7 เส้น จึงต่อส่วนที่เหลือในหน้าใหม่แทนที่จะตัดทิ้ง
+  if (problemOverflow.length > 0) {
+    page.drawText(t('(มีรายละเอียดต่อในหน้าถัดไป)'), {
+      x: probBoxLeft + 6,
+      y: probBoxBottom - 12,
+      size: 8,
+      font,
+      color: grayText,
+    });
+
+    let continuation = doc.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - margin;
+
+    const drawContinuationHeader = () => {
+      continuation.drawText(t(`รายละเอียดปัญหา (ต่อ) — เลขที่ ${req.workOrderNo ?? '-'}`), {
+        x: margin,
+        y,
+        size: 12,
+        font: fontBold,
+      });
+      y -= LINE_HEIGHT_THAI * 1.5;
+    };
+    drawContinuationHeader();
+
+    for (const line of problemOverflow) {
+      if (y < margin + LINE_HEIGHT_THAI) {
+        continuation = doc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - margin;
+        drawContinuationHeader();
+      }
+      continuation.drawText(t(line), { x: margin, y, size, font });
+      y -= LINE_HEIGHT_THAI;
+    }
+  }
 
   return doc.save();
 }
