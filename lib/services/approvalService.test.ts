@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { TransitionWithRelations } from '@/lib/workflow';
 import {
   findAuthorizedTransition,
+  isDepartmentAuthorized,
+  isSpecialApproverAuthorized,
   resolveActionForApprovalIntent,
 } from './approvalService';
 
@@ -56,5 +58,23 @@ describe('findAuthorizedTransition', () => {
   it('returns undefined for wrong role or action', () => {
     expect(findAuthorizedTransition(transitions, 'APPROVE', 'Requester')).toBeUndefined();
     expect(findAuthorizedTransition(transitions, 'IT_PROCESS', 'account')).toBeUndefined();
+  });
+});
+
+describe('approval scope guards', () => {
+  it('requires matching department when transition is department-scoped', () => {
+    expect(isDepartmentAuthorized({ filterByDepartment: true }, 10, 10)).toBe(true);
+    expect(isDepartmentAuthorized({ filterByDepartment: true }, 10, 20)).toBe(false);
+    expect(isDepartmentAuthorized({ filterByDepartment: true }, 10, null)).toBe(false);
+  });
+
+  it('allows any department when transition is not department-scoped', () => {
+    expect(isDepartmentAuthorized({ filterByDepartment: false }, 10, 20)).toBe(true);
+  });
+
+  it('requires the mapped user for a special approver step', () => {
+    expect(isSpecialApproverAuthorized(7, 7)).toBe(true);
+    expect(isSpecialApproverAuthorized(7, 8)).toBe(false);
+    expect(isSpecialApproverAuthorized(undefined, 8)).toBe(true);
   });
 });

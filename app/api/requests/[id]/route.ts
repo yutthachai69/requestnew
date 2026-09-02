@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getUserRoleNamesForWorkflowRole } from '@/lib/auth-constants';
 import { findPossibleTransitions } from '@/lib/workflow';
+import { parseAttachments } from '@/lib/attachments';
 import { handleApiError } from '@/lib/api-error';
+import { FileValidationError, saveFile, deleteFile, validateFile } from '@/lib/storage';
+import { TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
 
 /**
  * GET /api/requests/[id] - รายละเอียดคำร้องเดียว
@@ -94,6 +97,26 @@ export async function GET(
       categoryId: request.categoryId,
       currentStatusId,
       correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
+    });
+
+    // Keep the UI's available actions consistent with the server-side action
+    // authorization: department-scoped transitions and special approvers are
+    // filtered before possibleActions is returned.
+    const stepSequences = [...new Set(transitions.map((t) => t.stepSequence))];
+    const [actor, specialMappings] = await Promise.all([
+      prisma.user.findUnique({ where: { id: auth.id }, select: { departmentId: true } }),
+      prisma.specialApproverMapping.findMany({
+        where: { categoryId: request.categoryId, stepSequence: { in: stepSequences } },
+        select: { stepSequence: true, userId: true },
+      }),
+    ]);
+    const specialByStep = new Map(specialMappings.map((mapping) => [mapping.stepSequence, mapping.userId]));
+    transitions = transitions.filter((transition) => {
+      const departmentAllowed =
+        !transition.filterByDepartment || actor?.departmentId === request.departmentId;
+      const mappedUserId = specialByStep.get(transition.stepSequence);
+      const specialApproverAllowed = mappedUserId == null || mappedUserId === auth.id;
+      return departmentAllowed && specialApproverAllowed;
     });
 
     // ✅ Filter transitions: Remove if user already APPROVED this step (Parallel Check)
@@ -192,14 +215,16 @@ export async function PUT(
 
       // Parse existing files to keep
       try {
-        existingFiles = JSON.parse(formData.get('existingFiles')?.toString() || '[]');
+        const parsed = JSON.parse(formData.get('existingFiles')?.toString() || '[]');
+        existingFiles = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
       } catch {
         existingFiles = [];
       }
 
       // Parse files to delete
       try {
-        filesToDelete = JSON.parse(formData.get('filesToDelete')?.toString() || '[]');
+        const parsed = JSON.parse(formData.get('filesToDelete')?.toString() || '[]');
+        filesToDelete = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
       } catch {
         filesToDelete = [];
       }
@@ -216,8 +241,18 @@ export async function PUT(
       problemDetail = body.problemDetail != null ? String(body.problemDetail).trim() : undefined;
     }
 
-    // Process file uploads
-    const { saveFile, deleteFile } = await import('@/lib/storage');
+    // Validate every new file before changing existing attachments or request data.
+    for (const file of newFiles) {
+      await validateFile(file);
+    }
+
+    // Only allow the requester to keep/remove files already attached to this
+    // request. This prevents re-attaching or deleting another request's file
+    // by submitting a guessed /api/files path.
+    const originalFiles = new Set(parseAttachments(existing.attachmentPath));
+    const filesMarkedForDelete = new Set(filesToDelete.filter((filePath) => originalFiles.has(filePath)));
+    existingFiles = existingFiles.filter((filePath) => originalFiles.has(filePath) && !filesMarkedForDelete.has(filePath));
+    filesToDelete = [...filesMarkedForDelete];
 
     // Delete removed files
     for (const filePath of filesToDelete) {
@@ -227,12 +262,7 @@ export async function PUT(
     // Upload new files
     const newFilePaths: string[] = [];
     for (const file of newFiles) {
-      try {
-        const path = await saveFile(file);
-        newFilePaths.push(path);
-      } catch (e) {
-        console.error('File upload failed:', e);
-      }
+      newFilePaths.push(await saveFile(file));
     }
 
     // Combine existing (kept) files with new files
@@ -277,7 +307,7 @@ export async function PUT(
       // Notify next approvers (Head of Department)
       try {
         const { getNextApproversForStatus } = await import('@/lib/workflow');
-        const { createNotification } = await import('@/lib/notification');
+        const { createNotification, notifyAdminsOfStalledRequest } = await import('@/lib/notification');
         const pendingStatus = await prisma.status.findUnique({ where: { code: 'PENDING' } });
         if (pendingStatus) {
           const nextApprovers = await getNextApproversForStatus(
@@ -286,6 +316,14 @@ export async function PUT(
             existing.departmentId ?? undefined,
             null
           );
+          if (nextApprovers.length === 0) {
+            // แก้ไขส่งกลับเข้าระบบแล้วแต่ไม่มีใครรับพิจารณา — อย่าปล่อยให้เงียบ
+            await notifyAdminsOfStalledRequest({
+              requestId: id,
+              workOrderNo: existing.workOrderNo,
+              reason: 'คำร้องถูกแก้ไขและส่งกลับเข้าระบบ แต่ไม่พบผู้อนุมัติที่จะรับพิจารณา',
+            });
+          }
           for (const approver of nextApprovers) {
             if (approver.id) {
               await createNotification(approver.id, `มีใบงานแก้ไขแล้วรอพิจารณาใหม่: ${existing.workOrderNo}`, id);
@@ -301,6 +339,9 @@ export async function PUT(
 
     return NextResponse.json({ message: 'อัปเดตคำร้องสำเร็จ', request: updated });
   } catch (e) {
+    if (e instanceof FileValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     return handleApiError(e, 'PUT /api/requests/[id]');
   }
 }
@@ -340,16 +381,22 @@ export async function DELETE(
   }
 
   try {
-    await prisma.auditLog.create({
-      data: {
-        action: 'DELETE_REQUEST',
-        userId: auth.id,
-        detail: `Deleted Request ID ${id} by Admin`,
-        requestId: null,
-      },
-    });
-
-    await prisma.iTRequestF07.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      // Explicitly remove request-owned rows whose FK is NoAction in SQL Server.
+      await tx.notification.deleteMany({ where: { requestId: id } });
+      await tx.auditLog.deleteMany({ where: { requestId: id } });
+      await tx.approvalHistory.deleteMany({ where: { requestId: id } });
+      await tx.requestCorrectionType.deleteMany({ where: { requestId: id } });
+      await tx.iTRequestF07.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          action: 'DELETE_REQUEST',
+          userId: auth.id,
+          detail: `Deleted Request ID ${id} by Admin`,
+          requestId: null,
+        },
+      });
+    }, TRANSACTION_OPTIONS);
 
     return NextResponse.json({ message: 'ลบคำร้องเรียบร้อย' });
   } catch (e) {

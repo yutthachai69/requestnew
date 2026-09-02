@@ -14,8 +14,12 @@ import {
 import { generateRequestNumber } from '@/lib/document-number';
 import { sendApprovalEmail } from '@/lib/mail';
 import { getApprovalTemplate, getRevisionEmail, getCompletionEmail } from '@/lib/email-helper';
-import { createNotification, markNotificationsReadForRequests } from '@/lib/notification';
-import { postToPowerAutomate } from '@/lib/power-automate';
+import {
+  createNotification,
+  markNotificationsReadForRequests,
+  notifyAdminsOfStalledRequest,
+} from '@/lib/notification';
+import { withTransactionRetry, TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
 
 export const ALLOWED_ACTIONS = ['APPROVE', 'REJECT', 'IT_PROCESS', 'CONFIRM_COMPLETE'] as const;
 export type AllowedActionName = (typeof ALLOWED_ACTIONS)[number];
@@ -111,6 +115,21 @@ export function findAuthorizedTransition(
   });
 }
 
+export function isDepartmentAuthorized(
+  transition: Pick<TransitionWithRelations, 'filterByDepartment'>,
+  requestDepartmentId: number,
+  actorDepartmentId: number | null | undefined
+): boolean {
+  return !transition.filterByDepartment || actorDepartmentId === requestDepartmentId;
+}
+
+export function isSpecialApproverAuthorized(
+  mappedUserId: number | null | undefined,
+  actorUserId: number
+): boolean {
+  return mappedUserId == null || mappedUserId === actorUserId;
+}
+
 async function getCorrectionTypeIds(requestId: number): Promise<number[]> {
   const rows = await prisma.requestCorrectionType.findMany({
     where: { requestId },
@@ -155,7 +174,7 @@ async function runApprovalTransaction(
   const nextCode = nextStatus.code;
   const sourceLabel = source === 'email' ? 'ผ่านลิงก์อีเมล' : '';
 
-  return prisma.$transaction(async (tx) => {
+  return withTransactionRetry(() => prisma.$transaction(async (tx) => {
     let workOrderNo = req.workOrderNo;
     if (!workOrderNo && actionName !== 'REJECT') {
       workOrderNo = await generateRequestNumber(tx, req.categoryId);
@@ -165,8 +184,8 @@ async function runApprovalTransaction(
     const requestData = { requestId: id, requestNumber: workOrderNo ?? undefined };
 
     if (actionName === 'REJECT') {
-      await tx.iTRequestF07.update({
-        where: { id },
+      const rejected = await tx.iTRequestF07.updateMany({
+        where: { id, currentStatusId },
         data: {
           status: nextCode,
           currentStatusId: nextStatusId,
@@ -174,6 +193,7 @@ async function runApprovalTransaction(
           updatedAt: new Date(),
         },
       });
+      if (rejected.count !== 1) throw new Error('ALREADY_APPROVED');
       await tx.auditLog.create({
         data: {
           action: 'REJECT',
@@ -233,8 +253,8 @@ async function runApprovalTransaction(
     const isClosing = nextCode === 'CLOSED';
     const newToken = isClosing ? null : crypto.randomUUID();
 
-    await tx.iTRequestF07.update({
-      where: { id },
+    const updated = await tx.iTRequestF07.updateMany({
+      where: { id, currentStatusId },
       data: {
         status: nextCode,
         currentStatusId: nextStatusId,
@@ -243,6 +263,7 @@ async function runApprovalTransaction(
         updatedAt: new Date(),
       },
     });
+    if (updated.count !== 1) throw new Error('ALREADY_APPROVED');
 
     await tx.auditLog.create({
       data: {
@@ -263,7 +284,7 @@ async function runApprovalTransaction(
       nextStatusDisplayName: nextStatus.displayName,
       requestData,
     };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, ...TRANSACTION_OPTIONS }));
 }
 
 async function sendPostApprovalNotifications(
@@ -271,26 +292,6 @@ async function sendPostApprovalNotifications(
   result: TransactionResult,
   correctionTypeIds: number[]
 ): Promise<void> {
-  // POC: ยิง event เข้า Power Automate (เชื่อม Teams/365) — fire-and-forget, ปิดได้ด้วยการไม่ตั้ง env
-  const statusLabel =
-    result.type === 'REJECT'
-      ? 'ส่งกลับแก้ไข'
-      : result.type === 'WAITING'
-        ? null // ยังรอผู้อนุมัติคนอื่นในขั้นเดียวกัน — ยังไม่แจ้ง
-        : result.isClosing
-          ? 'ดำเนินการเสร็จสิ้น'
-          : result.nextStatusDisplayName;
-  if (statusLabel && result.type !== 'WAITING') {
-    const appUrl = process.env.NEXTAUTH_URL?.trim();
-    await postToPowerAutomate({
-      workOrderNo: req.workOrderNo ?? result.requestData.requestNumber ?? String(req.id),
-      requester: req.requester?.fullName ?? req.thaiName ?? '',
-      title: (req.problemDetail ?? '').slice(0, 120),
-      status: statusLabel,
-      link: appUrl ? `${appUrl}/request/${req.id}` : undefined,
-    });
-  }
-
   if (result.type === 'REJECT') {
     if (req.requester?.email) {
       try {
@@ -341,9 +342,11 @@ async function sendPostApprovalNotifications(
   );
 
   if (nextApprovers.length === 0) {
-    console.warn(
-      `[notify] ไม่พบผู้อนุมัติขั้นถัดไป — คำร้อง #${req.workOrderNo ?? req.id} statusId=${result.nextStatusId} correctionTypes=[${correctionTypeIds.join(',')}]`
-    );
+    await notifyAdminsOfStalledRequest({
+      requestId: req.id,
+      workOrderNo: result.requestData.requestNumber ?? req.workOrderNo,
+      reason: `ไม่พบผู้อนุมัติขั้นถัดไป (สถานะ "${result.nextStatusDisplayName}", statusId=${result.nextStatusId}, correctionTypes=[${correctionTypeIds.join(',')}])`,
+    });
     return;
   }
 
@@ -421,6 +424,14 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
     return { ok: false, code: 'NOT_FOUND', message: 'ไม่พบคำร้อง' };
   }
 
+  const actor = await prisma.user.findUnique({
+    where: { id: input.actor.userId },
+    select: { id: true, isActive: true, departmentId: true, role: { select: { roleName: true } } },
+  });
+  if (!actor?.isActive) {
+    return { ok: false, code: 'UNAUTHORIZED', message: 'ไม่พบผู้ใช้หรือบัญชีถูกปิดใช้งาน' };
+  }
+
   const statusCode = req.currentStatus?.code ?? req.status ?? 'PENDING';
   if (statusCode === 'CLOSED') {
     return { ok: false, code: 'CLOSED', message: 'คำร้องนี้ปิดงานเรียบร้อยแล้ว' };
@@ -433,7 +444,7 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
     correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
   });
 
-  const transition = findAuthorizedTransition(transitions, actionName, input.actor.roleName);
+  const transition = findAuthorizedTransition(transitions, actionName, actor.role.roleName);
   if (!transition) {
     if (transitions.length > 0) {
       return {
@@ -443,6 +454,23 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
       };
     }
     return { ok: false, code: 'NO_TRANSITION', message: 'ไม่พบขั้นตอนถัดไปสำหรับสถานะนี้ (No Transition Found)' };
+  }
+
+  if (!isDepartmentAuthorized(transition, req.departmentId, actor.departmentId)) {
+    return { ok: false, code: 'FORBIDDEN', message: 'ผู้อนุมัติอยู่นอกแผนกของคำร้องนี้' };
+  }
+
+  const specialApprover = await prisma.specialApproverMapping.findUnique({
+    where: {
+      categoryId_stepSequence: {
+        categoryId: transition.categoryId,
+        stepSequence: transition.stepSequence,
+      },
+    },
+    select: { userId: true },
+  });
+  if (!isSpecialApproverAuthorized(specialApprover?.userId, actor.id)) {
+    return { ok: false, code: 'FORBIDDEN', message: 'ผู้ใช้ไม่ได้ถูกกำหนดเป็นผู้อนุมัติพิเศษของขั้นตอนนี้' };
   }
 
   try {

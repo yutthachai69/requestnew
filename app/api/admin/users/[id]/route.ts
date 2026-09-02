@@ -99,11 +99,35 @@ export async function DELETE(
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   try {
+    // A user who has already acted in the system is referenced by AuditLog /
+    // ApprovalHistory / ITRequestF07 rows that must not be rewritten or lost.
+    // Refuse with a message the admin can act on instead of letting the FK
+    // violation surface as a 500.
+    const [auditCount, approvalCount, requestCount] = await Promise.all([
+      prisma.auditLog.count({ where: { userId: id } }),
+      prisma.approvalHistory.count({ where: { approverId: id } }),
+      prisma.iTRequestF07.count({ where: { requesterId: id } }),
+    ]);
+    if (auditCount > 0 || approvalCount > 0 || requestCount > 0) {
+      return NextResponse.json(
+        {
+          message:
+            'ไม่สามารถลบผู้ใช้นี้ได้ เพราะมีประวัติการใช้งานในระบบ (คำร้อง/การอนุมัติ/บันทึกการตรวจสอบ) กรุณาปิดใช้งานบัญชีแทนการลบ',
+        },
+        { status: 409 }
+      );
+    }
+
     await prisma.user.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2025')
       return NextResponse.json({ message: 'ไม่พบผู้ใช้' }, { status: 404 });
+    if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2003')
+      return NextResponse.json(
+        { message: 'ไม่สามารถลบผู้ใช้นี้ได้ เพราะมีข้อมูลอื่นอ้างอิงอยู่ กรุณาปิดใช้งานบัญชีแทน' },
+        { status: 409 }
+      );
     return handleApiError(e, 'DELETE /api/admin/users/[id]');
   }
 }
