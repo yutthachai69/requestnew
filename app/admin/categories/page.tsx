@@ -7,7 +7,6 @@ import LoadingSpinner from '@/app/components/LoadingSpinner';
 type Category = {
   CategoryID: number;
   CategoryName: string;
-  RequiresCCSClosing: boolean;
 };
 
 export default function AdminCategoriesPage() {
@@ -18,7 +17,6 @@ export default function AdminCategoriesPage() {
   const [current, setCurrent] = useState<Category | null>(null);
   const [toDelete, setToDelete] = useState<Category | null>(null);
   const [formName, setFormName] = useState('');
-  const [formCCS, setFormCCS] = useState(false);
   const { showNotification } = useNotification();
 
   const fetchList = useCallback(async () => {
@@ -43,7 +41,6 @@ export default function AdminCategoriesPage() {
   const handleOpen = (item: Category | null) => {
     setCurrent(item);
     setFormName(item ? item.CategoryName : '');
-    setFormCCS(item ? item.RequiresCCSClosing : false);
     setOpen(true);
   };
 
@@ -58,7 +55,7 @@ export default function AdminCategoriesPage() {
         const res = await fetch(`/api/admin/categories/${current.CategoryID}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, requiresCCSClosing: formCCS }),
+          body: JSON.stringify({ name }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'อัปเดตล้มเหลว');
@@ -67,7 +64,7 @@ export default function AdminCategoriesPage() {
         const res = await fetch('/api/admin/categories', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, requiresCCSClosing: formCCS }),
+          body: JSON.stringify({ name }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'สร้างล้มเหลว');
@@ -123,7 +120,6 @@ export default function AdminCategoriesPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ชื่อหมวดหมู่</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">ต้องให้บัญชีปิดงาน</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">เครื่องมือ</th>
               </tr>
             </thead>
@@ -132,15 +128,6 @@ export default function AdminCategoriesPage() {
                 <tr key={c.CategoryID} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-600">{c.CategoryID}</td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.CategoryName}</td>
-                  <td className="px-4 py-3 text-center">
-                    {c.RequiresCCSClosing ? (
-                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                        ใช่
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">ไม่</span>
-                    )}
-                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -186,14 +173,6 @@ export default function AdminCategoriesPage() {
                   placeholder="ชื่อหมวดหมู่"
                 />
               </div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formCCS}
-                  onChange={(e) => setFormCCS(e.target.checked)}
-                />
-                <span className="text-sm">ต้องให้ฝ่ายบัญชี (CCS) เป็นผู้ปิดงานขั้นสุดท้าย</span>
-              </label>
             </div>
             <div className="flex justify-end gap-2 mt-6">
               <button

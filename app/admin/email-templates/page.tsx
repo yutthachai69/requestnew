@@ -97,7 +97,7 @@ export default function AdminEmailTemplatesPage() {
             แก้ไขหัวข้อและเนื้อหาอีเมลที่ระบบส่งอัตโนมัติได้ที่นี่ (รองรับ HTML)
           </p>
         </div>
-        <Link href="/admin" className="text-blue-600 hover:underline text-sm">
+        <Link href="/admin" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไป Admin
         </Link>
       </div>

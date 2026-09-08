@@ -17,6 +17,7 @@ export async function GET() {
         CategoryID: c.id,
         CategoryName: c.name,
         RequiresCCSClosing: c.requiresCCSClosing,
+        IsWorkflowTemplate: c.isWorkflowTemplate,
         locations: c.locations,
       }))
     );
