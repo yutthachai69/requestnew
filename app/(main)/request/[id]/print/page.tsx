@@ -73,7 +73,7 @@ export default function RequestPrintPage() {
       .then((data) => {
         if (cancelled) return;
         setRequest(data.request);
-        setHistory(data.history ?? []);
+        setHistory(data.currentRoundHistory ?? []);
         setResolvedBy(data.resolvedBy ?? null);
         setResolvedAt(data.resolvedAt ?? null);
         setApprovedByITViewer(data.approvedByITViewer ?? null);
@@ -277,7 +277,7 @@ export default function RequestPrintPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
           {error ?? 'ไม่พบข้อมูลคำร้อง'}
         </div>
-        <Link href="/dashboard" className="mt-4 inline-block text-blue-600 hover:underline">
+        <Link href="/dashboard" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไป Dashboard
         </Link>
       </div>
@@ -298,7 +298,7 @@ export default function RequestPrintPage() {
 
       {/* Toolbar */}
       <div className="mb-4 flex items-center justify-between flex-wrap gap-2 print:hidden max-w-5xl mx-auto">
-        <Link href={`/request/${id}`} className="text-blue-600 hover:underline text-sm font-medium">
+        <Link href={`/request/${id}`} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไปรายละเอียดคำร้อง
         </Link>
         <div className="flex flex-wrap gap-3 items-center">

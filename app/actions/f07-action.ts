@@ -15,6 +15,7 @@ import { saveFile, deleteFile } from '@/lib/storage';
 import { handleActionError } from '@/lib/api-error';
 import { withTransactionRetry, TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
 import { generateRequestNumber } from '@/lib/document-number';
+import { resolveWorkflowVersionId } from '@/lib/workflow-versioning';
 
 export async function submitF07(formData: FormData) {
     const auth = await getAuthUser()
@@ -39,6 +40,14 @@ export async function submitF07(formData: FormData) {
     const systemTypeOther = (formData.get('systemTypeOther') as string)?.trim()
     if (systemType === 'อื่นๆ' && systemTypeOther) systemType = systemTypeOther
     const isMoneyRelated = formData.get('isMoneyRelated') === 'true'
+    const requiresAccountRecheck = formData.get('requiresAccountRecheck') === 'true'
+    const correctionTypeIds = (() => {
+        try {
+            const raw = formData.get('correctionTypeIds')
+            const parsed = raw ? JSON.parse(String(raw)) : []
+            return Array.isArray(parsed) ? parsed.map(Number).filter((id: number) => Number.isInteger(id) && id > 0) : []
+        } catch { return [] }
+    })()
 
     // 3. เขียนไฟล์แนบลงดิสก์ *ก่อน* เปิด transaction
     //
@@ -51,18 +60,24 @@ export async function submitF07(formData: FormData) {
         (file) => file.size > 0 && file.name !== 'undefined'
     );
     const savedPaths: string[] = [];
-    for (const file of attachmentFiles) {
-        try {
+    try {
+        for (const file of attachmentFiles) {
+            // Fail the submission when any attachment cannot be saved. The
+            // cleanup below removes files that were already written.
             savedPaths.push(await saveFile(file));
-        } catch (e) {
-            console.error('File upload failed:', e);
         }
+    } catch (error) {
+        for (const filePath of savedPaths) {
+            await deleteFile(filePath).catch(() => undefined);
+        }
+        return handleActionError(error, 'submitF07 upload');
     }
     const attachmentPath = savedPaths.length > 0 ? JSON.stringify(savedPaths) : null;
 
+    let newRequest;
     try {
-        // 4. บันทึกลงฐานข้อมูล (Transaction — เฉพาะงาน DB)
-        const newRequest = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
+        // บันทึกลงฐานข้อมูล (Transaction — เฉพาะงาน DB)
+        newRequest = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
             // --- ส่วนที่ 1: รันเลขที่เอกสาร ---
             // ใช้ generateRequestNumber ตัวเดียวกับเส้นทางอนุมัติ (เดิมไฟล์นี้มี
             // ตรรกะซ้ำของตัวเอง ทำให้แก้ปัญหา deadlock ที่ DocConfig ได้ไม่ทั่วถึง)
@@ -73,6 +88,7 @@ export async function submitF07(formData: FormData) {
                 select: { id: true },
             })
             const currentStatusId = initialStatus?.id ?? 1
+            const workflowVersionId = await resolveWorkflowVersionId(tx, categoryId, correctionTypeIds)
 
             // --- ส่วนที่ 2: บันทึกใบคำร้องจริง (State Machine: ใช้ currentStatusId) ---
             return await tx.iTRequestF07.create({
@@ -86,14 +102,16 @@ export async function submitF07(formData: FormData) {
                     problemDetail,
                     systemType,
                     isMoneyRelated,
+                    requiresAccountRecheck,
+                    workflowVersionId,
                     status: 'PENDING',
                     currentStatusId,
                     requesterId,
                     approvalToken: crypto.randomUUID(),
                     attachmentPath,
-                    ...(formData.get('correctionTypeIds') && JSON.parse(formData.get('correctionTypeIds') as string).length > 0 ? {
+                    ...(correctionTypeIds.length > 0 ? {
                         correctionTypes: {
-                            create: JSON.parse(formData.get('correctionTypeIds') as string).map((id: number) => ({
+                            create: correctionTypeIds.map((id: number) => ({
                                 correctionTypeId: id
                             }))
                         }
@@ -102,57 +120,61 @@ export async function submitF07(formData: FormData) {
             })
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, ...TRANSACTION_OPTIONS }))
 
-        // Log removed)
-
-        // 🔥 4. ระบบส่งเมลหาผู้อนุมัติ: ใช้ WorkflowTransitions ก่อน; ไม่มีถึงใช้ WorkflowStep/หัวหน้าแผนก
-        let approver = await getFirstApproverForCategoryFromTransitions(categoryId, departmentId)
-        if (!approver) approver = await getFirstApproverForCategory(categoryId, departmentId)
-        if (!approver) approver = await getDeptManagerEmail(departmentId)
-
-        if (approver && approver.email) {
-            // ✅ สร้าง Notification ในระบบด้วย
-            if (approver.id) {
-                const { createNotification } = await import('@/lib/notification');
-                await createNotification(approver.id, `มีใบงานใหม่รออนุมัติ: ${newRequest.workOrderNo} (${thaiName})`, newRequest.id);
-            }
-
-            const { subject, body } = getApprovalTemplate(newRequest, approver.fullName, {
-                approvalToken: newRequest.approvalToken,
-            });
-            const sent = await sendApprovalEmail({
-                to: [approver.email],
-                subject,
-                body,
-                senderName: thaiName,
-                replyTo: auth.email || undefined,
-            });
-            if (!sent.ok) {
-                console.error('[mail] ส่งเมลตอนสร้างคำร้องล้มเหลว:', sent);
-            }
-        } else {
-            // ไม่มีใครรับคำร้องนี้ต่อ — ต้องแจ้ง Admin ไม่งั้นคำร้องจะค้างเงียบ
-            const { notifyAdminsOfStalledRequest } = await import('@/lib/notification');
-            await notifyAdminsOfStalledRequest({
-                requestId: newRequest.id,
-                workOrderNo: newRequest.workOrderNo,
-                reason: 'ไม่พบผู้อนุมัติขั้นแรก หรือผู้อนุมัติไม่มีอีเมลในระบบ (ตรวจ Workflow และหัวหน้าแผนก)',
-            });
-        }
-
-        revalidatePath('/dashboard')
-
-        return {
-            success: true,
-            message: 'บันทึกคำร้องสำเร็จ',
-            workOrderNo: newRequest.workOrderNo,
-            id: newRequest.id
-        }
-
     } catch (error) {
         // คำร้องไม่ถูกบันทึก — เก็บไฟล์ที่เพิ่งเขียนไว้ทิ้ง ไม่ให้เหลือไฟล์กำพร้า
         for (const filePath of savedPaths) {
             await deleteFile(filePath).catch(() => undefined);
         }
         return handleActionError(error, 'submitF07')
+    }
+
+    // Notification/email is best effort and must never turn a committed
+    // request into a reported failure (or trigger attachment cleanup).
+    try {
+        let approver = await getFirstApproverForCategoryFromTransitions(categoryId, departmentId, newRequest.workflowVersionId, requiresAccountRecheck)
+        if (!approver) approver = await getFirstApproverForCategory(categoryId, departmentId)
+        if (!approver) approver = await getDeptManagerEmail(departmentId)
+
+        const { createNotification, notifyAdminsOfStalledRequest } = await import('@/lib/notification');
+
+        if (!approver) {
+            await notifyAdminsOfStalledRequest({
+                requestId: newRequest.id,
+                workOrderNo: newRequest.workOrderNo,
+                reason: 'ไม่พบผู้อนุมัติขั้นแรก (ตรวจ Workflow และหัวหน้าแผนก)',
+            });
+        } else {
+            // แจ้งเตือนในระบบต้องถึงผู้อนุมัติเสมอ แม้ไม่มีอีเมล — เขาเห็นงานได้จากหน้ารายการงานรอ
+            if (approver.id) {
+                await createNotification(approver.id, `มีใบงานใหม่รออนุมัติ: ${newRequest.workOrderNo} (${thaiName})`, newRequest.id);
+            }
+
+            if (!approver.email) {
+                await notifyAdminsOfStalledRequest({
+                    requestId: newRequest.id,
+                    workOrderNo: newRequest.workOrderNo,
+                    reason: `ผู้อนุมัติขั้นแรก (${approver.fullName}) ไม่มีอีเมลในระบบ — แจ้งเตือนในระบบถูกสร้างแล้วแต่ไม่ได้ส่งเมล`,
+                });
+            } else {
+                const { subject, body } = getApprovalTemplate(newRequest, approver.fullName, {
+                    approvalToken: newRequest.approvalToken,
+                });
+                const sent = await sendApprovalEmail({
+                    to: [approver.email], subject, body,
+                    senderName: thaiName, replyTo: auth.email || undefined,
+                });
+                if (!sent.ok) console.error('[mail] ส่งเมลตอนสร้างคำร้องล้มเหลว:', sent);
+            }
+        }
+    } catch (error) {
+        console.error('[notify] แจ้งผู้อนุมัติหลังสร้างคำร้องล้มเหลว:', error);
+    }
+
+    revalidatePath('/dashboard')
+    return {
+        success: true,
+        message: 'บันทึกคำร้องสำเร็จ',
+        workOrderNo: newRequest.workOrderNo,
+        id: newRequest.id
     }
 }

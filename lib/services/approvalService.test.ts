@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import type { TransitionWithRelations } from '@/lib/workflow';
 import {
+  filterTransitionsForActor,
   findAuthorizedTransition,
+  getNextStatusAfterItProcess,
   isDepartmentAuthorized,
   isSpecialApproverAuthorized,
   resolveActionForApprovalIntent,
 } from './approvalService';
+
+describe('getNextStatusAfterItProcess', () => {
+  it('sends a checked request to accounting round 2', () => {
+    expect(getNextStatusAfterItProcess(true)).toBe('WAITING_ACCOUNT_2');
+  });
+
+  it('sends an unchecked request directly to IT Reviewer', () => {
+    expect(getNextStatusAfterItProcess(false)).toBe('WAITING_IT_CLOSE');
+  });
+});
 
 function mockTransition(
   actionName: string,
@@ -76,5 +88,34 @@ describe('approval scope guards', () => {
     expect(isSpecialApproverAuthorized(7, 7)).toBe(true);
     expect(isSpecialApproverAuthorized(7, 8)).toBe(false);
     expect(isSpecialApproverAuthorized(undefined, 8)).toBe(true);
+  });
+});
+
+describe('filterTransitionsForActor', () => {
+  const steps = [
+    { stepSequence: 1, filterByDepartment: true },
+    { stepSequence: 2, filterByDepartment: false },
+    { stepSequence: 3, filterByDepartment: false },
+  ];
+  const context = {
+    requestDepartmentId: 10,
+    actorUserId: 5,
+    actorDepartmentId: 20,
+    specialApproverByStep: new Map([[3, 7]]),
+  };
+
+  it('drops the steps this actor would be refused on at submit time', () => {
+    // step 1 = other department, step 3 = someone else is the special approver
+    expect(filterTransitionsForActor(steps, context).map((t) => t.stepSequence)).toEqual([2]);
+  });
+
+  it('keeps a department step for an approver inside the department', () => {
+    expect(filterTransitionsForActor(steps, { ...context, actorDepartmentId: 10 })
+      .map((t) => t.stepSequence)).toEqual([1, 2]);
+  });
+
+  it('keeps a mapped step for the special approver named on it', () => {
+    expect(filterTransitionsForActor(steps, { ...context, actorUserId: 7 })
+      .map((t) => t.stepSequence)).toEqual([2, 3]);
   });
 });

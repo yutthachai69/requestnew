@@ -54,7 +54,7 @@ export default async function ApprovePage({ params }: { params: Promise<{ token:
       </div>
 
       {/* ปุ่มกดอนุมัติ/ไม่อนุมัติ (Client Component) */}
-      <ApprovalButtons token={token} />
+      <ApprovalButtons token={token} updatedAt={request.updatedAt.toISOString()} />
     </div>
   );
 }

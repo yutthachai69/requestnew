@@ -3,10 +3,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getUserRoleNamesForWorkflowRole } from '@/lib/auth-constants';
 import { findPossibleTransitions } from '@/lib/workflow';
-import { parseAttachments } from '@/lib/attachments';
+import { mergeAttachments, parseAttachments } from '@/lib/attachments';
 import { handleApiError } from '@/lib/api-error';
 import { FileValidationError, saveFile, deleteFile, validateFile } from '@/lib/storage';
-import { TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
+import { TRANSACTION_OPTIONS, withTransactionRetry } from '@/lib/transaction-retry';
+import { matchesRequestVersion, nextRequestTimestamp } from '@/lib/request-concurrency';
+import { currentRoundEvidence } from '@/lib/approval-history';
+import { filterTransitionsForActor } from '@/lib/services/approvalService';
+import { randomUUID } from 'crypto';
+
+class RequestConflictError extends Error {
+  constructor() {
+    super('REQUEST_CONFLICT');
+    this.name = 'RequestConflictError';
+  }
+}
 
 /**
  * GET /api/requests/[id] - รายละเอียดคำร้องเดียว
@@ -32,7 +43,8 @@ export async function GET(
         location: true,
         currentStatus: { select: { id: true, code: true, displayName: true, colorCode: true } },
         requester: { select: { id: true, fullName: true, username: true, email: true, position: true, signatureUrl: true } },
-        correctionTypes: { select: { correctionTypeId: true } },
+      correctionTypes: { select: { correctionTypeId: true } },
+      workflowVersion: { select: { id: true, versionNumber: true, status: true, label: true } },
       },
     });
 
@@ -72,24 +84,14 @@ export async function GET(
       ApprovalTimestamp: log.timestamp,
       SignatureUrl: log.user?.signatureUrl ?? null,
     }));
-    const lastITProcess = [...(historyLogs as any[])].reverse().find((l) => l.action === 'IT_PROCESS');
-    const resolvedBy = lastITProcess?.user?.fullName ?? null;
-    const resolvedAt = lastITProcess?.timestamp ?? null;
-    // ปัญหาอุปสรรค (ถ้ามี) จาก comment ของ IT_PROCESS — detail เก็บเป็น "... → StatusName: comment"
-    const itObstacles =
-      lastITProcess?.detail != null
-        ? (() => {
-          const afterArrow = (lastITProcess as any).detail.split(' → ').pop() ?? '';
-          const idx = afterArrow.indexOf(': ');
-          return idx >= 0 ? afterArrow.slice(idx + 2).trim() : null;
-        })()
-        : null;
-    // ผู้อนุมัติในส่วนเทคโนโลยีสารสนเทศ = role IT Reviewer (It viewer)
-    const IT_VIEWER_ROLES = ['IT Reviewer', 'It viewer'];
-    const lastITViewerLog = [...(historyLogs as any[])].reverse().find((l) =>
-      IT_VIEWER_ROLES.includes(l.user?.role?.roleName ?? '')
-    );
-    const approvedByITViewer = lastITViewerLog?.user?.fullName ?? null;
+    const roundHistory = await prisma.approvalHistory.findMany({
+      where: { requestId: id, approvalRound: request.approvalRound },
+      orderBy: [{ approvalTimestamp: 'asc' }, { id: 'asc' }],
+      include: { approver: { select: {
+        fullName: true, signatureUrl: true, role: { select: { roleName: true } },
+      } } },
+    });
+    const evidence = currentRoundEvidence(roundHistory, request.approvalRound);
 
     const currentStatusId = request.currentStatusId ?? 1;
     const correctionTypeIds = (request as { correctionTypes?: { correctionTypeId: number }[] }).correctionTypes?.map((r) => r.correctionTypeId) ?? [];
@@ -97,6 +99,8 @@ export async function GET(
       categoryId: request.categoryId,
       currentStatusId,
       correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
+      workflowVersionId: request.workflowVersionId,
+      requiresAccountRecheck: request.requiresAccountRecheck,
     });
 
     // Keep the UI's available actions consistent with the server-side action
@@ -110,13 +114,11 @@ export async function GET(
         select: { stepSequence: true, userId: true },
       }),
     ]);
-    const specialByStep = new Map(specialMappings.map((mapping) => [mapping.stepSequence, mapping.userId]));
-    transitions = transitions.filter((transition) => {
-      const departmentAllowed =
-        !transition.filterByDepartment || actor?.departmentId === request.departmentId;
-      const mappedUserId = specialByStep.get(transition.stepSequence);
-      const specialApproverAllowed = mappedUserId == null || mappedUserId === auth.id;
-      return departmentAllowed && specialApproverAllowed;
+    transitions = filterTransitionsForActor(transitions, {
+      requestDepartmentId: request.departmentId,
+      actorUserId: auth.id,
+      actorDepartmentId: actor?.departmentId,
+      specialApproverByStep: new Map(specialMappings.map((m) => [m.stepSequence, m.userId])),
     });
 
     // ✅ Filter transitions: Remove if user already APPROVED this step (Parallel Check)
@@ -125,6 +127,7 @@ export async function GET(
         where: {
           requestId: id,
           approverId: Number(userId),
+          approvalRound: request.approvalRound,
           actionType: { in: ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'] }
         },
         select: { approvalLevel: true }
@@ -154,6 +157,7 @@ export async function GET(
         problemDetail: (request as any).problemDetail,
         systemType: (request as any).systemType,
         isMoneyRelated: (request as any).isMoneyRelated,
+        requiresAccountRecheck: (request as any).requiresAccountRecheck,
         status: (request as any).status,
         currentStatusId: (request as any).currentStatusId,
         currentStatus: (request as any).currentStatus,
@@ -161,6 +165,7 @@ export async function GET(
         attachmentPath: (request as any).attachmentPath,
         createdAt: (request as any).createdAt,
         updatedAt: (request as any).updatedAt,
+        approvalRound: request.approvalRound,
         department: (request as any).department,
         category: (request as any).category,
         location: (request as any).location,
@@ -169,10 +174,7 @@ export async function GET(
       },
       history,
       possibleActions,
-      resolvedBy,
-      resolvedAt: resolvedAt ? resolvedAt.toISOString() : null,
-      approvedByITViewer,
-      itObstacles: itObstacles || null,
+      ...evidence,
     });
   } catch (e) {
     return handleApiError(e, 'GET /api/requests/[id]');
@@ -205,13 +207,27 @@ export async function PUT(
     // Handle both FormData (with files) and JSON
     const contentType = request.headers.get('content-type') || '';
     let problemDetail: string | undefined;
+    let requiresAccountRecheck: boolean | undefined;
     let existingFiles: string[] = [];
     let filesToDelete: string[] = [];
     let newFiles: File[] = [];
+    let attachmentUpdateRequested = false;
+    let existingFilesProvided = false;
+    let expectedUpdatedAt: Date | undefined;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
+      existingFilesProvided = formData.has('existingFiles');
+      attachmentUpdateRequested = existingFilesProvided || formData.has('filesToDelete') || formData.has('attachments');
       problemDetail = formData.get('problemDetail')?.toString().trim();
+      if (formData.has('requiresAccountRecheck')) {
+        requiresAccountRecheck = formData.get('requiresAccountRecheck') === 'true';
+      }
+      const updatedAtRaw = formData.get('updatedAt')?.toString();
+      if (updatedAtRaw) {
+        const parsed = new Date(updatedAtRaw);
+        if (!Number.isNaN(parsed.getTime())) expectedUpdatedAt = parsed;
+      }
 
       // Parse existing files to keep
       try {
@@ -239,7 +255,28 @@ export async function PUT(
     } else {
       const body = await request.json();
       problemDetail = body.problemDetail != null ? String(body.problemDetail).trim() : undefined;
+      if (body.requiresAccountRecheck !== undefined) {
+        requiresAccountRecheck =
+          typeof body.requiresAccountRecheck === 'boolean'
+            ? body.requiresAccountRecheck
+            : String(body.requiresAccountRecheck) === 'true';
+      }
+      if (body.updatedAt) {
+        const parsed = new Date(String(body.updatedAt));
+        if (!Number.isNaN(parsed.getTime())) expectedUpdatedAt = parsed;
+      }
     }
+
+    if (!matchesRequestVersion(expectedUpdatedAt?.toISOString(), existing.updatedAt)) {
+      return NextResponse.json(
+        { message: 'คำร้องเปลี่ยนไปแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนแก้ไข', code: 'REQUEST_CONFLICT' },
+        { status: 409 },
+      );
+    }
+    // Resolve resubmission configuration before saving any uploaded files.
+    const pendingStatus = existing.status === 'REVISION'
+      ? await prisma.status.findUnique({ where: { code: 'PENDING' } }) : null;
+    if (existing.status === 'REVISION' && !pendingStatus) throw new Error('Missing PENDING status');
 
     // Validate every new file before changing existing attachments or request data.
     for (const file of newFiles) {
@@ -249,72 +286,116 @@ export async function PUT(
     // Only allow the requester to keep/remove files already attached to this
     // request. This prevents re-attaching or deleting another request's file
     // by submitting a guessed /api/files path.
-    const originalFiles = new Set(parseAttachments(existing.attachmentPath));
-    const filesMarkedForDelete = new Set(filesToDelete.filter((filePath) => originalFiles.has(filePath)));
-    existingFiles = existingFiles.filter((filePath) => originalFiles.has(filePath) && !filesMarkedForDelete.has(filePath));
-    filesToDelete = [...filesMarkedForDelete];
-
-    // Delete removed files
-    for (const filePath of filesToDelete) {
-      await deleteFile(filePath);
-    }
+    const originalFiles = parseAttachments(existing.attachmentPath);
+    const originalFileSet = new Set(originalFiles);
+    filesToDelete = filesToDelete.filter((filePath) => originalFileSet.has(filePath));
 
     // Upload new files
     const newFilePaths: string[] = [];
-    for (const file of newFiles) {
-      newFilePaths.push(await saveFile(file));
+    try {
+      for (const file of newFiles) {
+        newFilePaths.push(await saveFile(file));
+      }
+    } catch (error) {
+      // Do not leave files that were written before a later upload failed.
+      for (const filePath of newFilePaths) await deleteFile(filePath);
+      throw error;
     }
 
     // Combine existing (kept) files with new files
-    const allAttachments = [...existingFiles, ...newFilePaths];
-    const attachmentPath = allAttachments.length > 0 ? JSON.stringify(allAttachments) : null;
-
-    const data: { problemDetail?: string; attachmentPath?: string | null; updatedAt: Date; status?: string; currentStatusId?: number; approvalToken?: string } = {
-      updatedAt: new Date(),
-      attachmentPath,
-    };
+    const allAttachments = mergeAttachments({
+      original: originalFiles,
+      keep: existingFiles,
+      remove: filesToDelete,
+      additions: newFilePaths,
+      keepListProvided: existingFilesProvided,
+    });
+    const data: { problemDetail?: string; requiresAccountRecheck?: boolean; attachmentPath?: string | null; updatedAt: Date; status?: string; currentStatusId?: number; currentApprovalStep?: number; approvalRound?: number; approvalToken?: string } = { updatedAt: nextRequestTimestamp(existing.updatedAt) };
+    if (attachmentUpdateRequested) data.attachmentPath = allAttachments.length > 0 ? JSON.stringify(allAttachments) : null;
     if (problemDetail !== undefined) data.problemDetail = problemDetail;
+    if (requiresAccountRecheck !== undefined) data.requiresAccountRecheck = requiresAccountRecheck;
+    // Pending requests can already have a parallel approval. Editing starts
+    // a fresh round so no vote on the previous content carries forward.
+    data.approvalRound = existing.approvalRound + 1;
+    data.approvalToken = randomUUID();
+    data.currentApprovalStep = 1;
 
     // If the request is in REVISION status, resubmit it back to PENDING
     if (existing.status === 'REVISION') {
-      const pendingStatus = await prisma.status.findUnique({ where: { code: 'PENDING' } });
       if (pendingStatus) {
         data.status = 'PENDING';
         data.currentStatusId = pendingStatus.id;
-        data.approvalToken = (await import('crypto')).default.randomUUID();
+        data.currentApprovalStep = 1;
       }
     }
 
-    const updated = await prisma.iTRequestF07.update({
-      where: { id },
-      data,
-    });
+    let updated;
+    try {
+      updated = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
+        // Compare the version the requester edited against the current row.
+        // The conditional write makes the check atomic with the update.
+        const result = await tx.iTRequestF07.updateMany({
+          where: {
+            id,
+            requesterId: Number(userId),
+            updatedAt: existing.updatedAt,
+            currentStatusId: existing.currentStatusId,
+            status: existing.status,
+            approvalRound: existing.approvalRound,
+          },
+          data,
+        });
+        if (result.count !== 1) throw new RequestConflictError();
+
+        await tx.auditLog.create({
+            data: {
+              action: existing.status === 'REVISION' ? 'RESUBMIT' : 'EDIT_REQUEST',
+              userId: Number(userId),
+              detail: `Request #${existing.workOrderNo} แก้ไขและเริ่มรอบพิจารณา ${data.approvalRound}`,
+              requestId: id,
+            },
+          });
+        return tx.iTRequestF07.findUnique({ where: { id } });
+      }, TRANSACTION_OPTIONS));
+    } catch (error) {
+      // The database still points at the old attachment list; remove only the
+      // new files that are not referenced by it.
+      for (const filePath of newFilePaths) await deleteFile(filePath);
+      if (error instanceof RequestConflictError) {
+        return NextResponse.json(
+          { message: 'คำร้องถูกแก้ไขหรือดำเนินการไปแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนลองใหม่', code: 'REQUEST_CONFLICT' },
+          { status: 409 },
+        );
+      }
+      throw error;
+    }
+
+    // Remove old files only after the database now references the replacement
+    // list. A failed DB write therefore cannot destroy the previous files.
+    if (attachmentUpdateRequested) {
+      for (const filePath of filesToDelete) await deleteFile(filePath);
+    }
 
     // If resubmitted (was REVISION → now PENDING), create audit log and notify
     if (existing.status === 'REVISION') {
-      // ✅ RESET APPROVAL HISTORY: Clear old approvals so users can approve again
-      await prisma.approvalHistory.deleteMany({ where: { requestId: id } });
-
-      await prisma.auditLog.create({
-        data: {
-          action: 'RESUBMIT',
-          userId: Number(userId),
-          detail: `Request #${existing.workOrderNo} แก้ไขและส่งกลับเข้าระบบใหม่`,
-          requestId: id,
-        },
-      });
-
       // Notify next approvers (Head of Department)
       try {
         const { getNextApproversForStatus } = await import('@/lib/workflow');
         const { createNotification, notifyAdminsOfStalledRequest } = await import('@/lib/notification');
         const pendingStatus = await prisma.status.findUnique({ where: { code: 'PENDING' } });
         if (pendingStatus) {
+          const correctionTypeRows = await prisma.requestCorrectionType.findMany({
+            where: { requestId: id },
+            select: { correctionTypeId: true },
+          });
           const nextApprovers = await getNextApproversForStatus(
             existing.categoryId,
             pendingStatus.id,
             existing.departmentId ?? undefined,
-            null
+            null,
+            correctionTypeRows.map((row) => row.correctionTypeId),
+            existing.workflowVersionId,
+            updated?.requiresAccountRecheck ?? existing.requiresAccountRecheck,
           );
           if (nextApprovers.length === 0) {
             // แก้ไขส่งกลับเข้าระบบแล้วแต่ไม่มีใครรับพิจารณา — อย่าปล่อยให้เงียบ

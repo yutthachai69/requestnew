@@ -13,6 +13,8 @@ type RequestDetail = {
   status: string;
   requesterId: number;
   attachmentPath: string | null;
+  requiresAccountRecheck: boolean;
+  updatedAt: string;
 };
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
@@ -25,6 +27,7 @@ export default function RequestEditPage() {
   const { showNotification } = useNotification();
   const [request, setRequest] = useState<RequestDetail | null>(null);
   const [problemDetail, setProblemDetail] = useState('');
+  const [requiresAccountRecheck, setRequiresAccountRecheck] = useState(false);
   const [existingFiles, setExistingFiles] = useState<string[]>([]);
   const [filesToDelete, setFilesToDelete] = useState<string[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
@@ -34,6 +37,7 @@ export default function RequestEditPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [initialProblemDetail, setInitialProblemDetail] = useState('');
+  const [initialRequiresAccountRecheck, setInitialRequiresAccountRecheck] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -51,6 +55,9 @@ export default function RequestEditPage() {
         const detail = data.request?.problemDetail ?? '';
         setProblemDetail(detail);
         setInitialProblemDetail(detail); // Keep track of initial value
+        const accountRecheck = Boolean(data.request?.requiresAccountRecheck);
+        setRequiresAccountRecheck(accountRecheck);
+        setInitialRequiresAccountRecheck(accountRecheck);
 
         // Parse existing attachments
         if (data.request?.attachmentPath) {
@@ -72,6 +79,7 @@ export default function RequestEditPage() {
   // Check if there are any changes
   const hasChanges =
     problemDetail.trim() !== initialProblemDetail.trim() ||
+    requiresAccountRecheck !== initialRequiresAccountRecheck ||
     newFiles.length > 0 ||
     filesToDelete.length > 0;
 
@@ -124,6 +132,8 @@ export default function RequestEditPage() {
     try {
       const formData = new FormData();
       formData.append('problemDetail', problemDetail.trim());
+      formData.append('requiresAccountRecheck', String(requiresAccountRecheck));
+      formData.append('updatedAt', request.updatedAt);
       formData.append('existingFiles', JSON.stringify(existingFiles));
       formData.append('filesToDelete', JSON.stringify(filesToDelete));
 
@@ -178,7 +188,7 @@ export default function RequestEditPage() {
     return (
       <div className="w-full p-6">
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">{error ?? 'ไม่พบคำร้อง'}</div>
-        <Link href="/dashboard" className="mt-4 inline-block text-blue-600 hover:underline">← กลับไป Dashboard</Link>
+        <Link href="/dashboard" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">← กลับไป Dashboard</Link>
       </div>
     );
   }
@@ -199,7 +209,7 @@ export default function RequestEditPage() {
         <h1 className="text-xl font-bold text-gray-900">
           {request.status === 'REVISION' ? 'แก้ไขและส่งคำร้องใหม่' : 'แก้ไขคำร้อง'} #{request.workOrderNo ?? id}
         </h1>
-        <Link href={`/request/${id}`} className="text-blue-600 hover:underline text-sm">← กลับไปรายละเอียด</Link>
+        <Link href={`/request/${id}`} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">← กลับไปรายละเอียด</Link>
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-6">
@@ -215,6 +225,23 @@ export default function RequestEditPage() {
             placeholder="ระบุรายละเอียด..."
           />
         </div>
+
+        <label className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={requiresAccountRecheck}
+            onChange={(e) => setRequiresAccountRecheck(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span>
+            <span className="block text-sm font-semibold text-gray-900">
+              หลังจาก IT แก้ไขข้อมูลแล้ว ให้ฝ่ายบัญชีตรวจสอบอีกครั้งก่อนปิดงาน
+            </span>
+            <span className="mt-1 block text-xs text-gray-600">
+              หากไม่เลือก ระบบจะส่งคำขอให้ IT ตรวจรับและปิดงานต่อทันทีหลังแก้ไขเสร็จ
+            </span>
+          </span>
+        </label>
 
         {/* Existing Files */}
         {existingFiles.length > 0 && (

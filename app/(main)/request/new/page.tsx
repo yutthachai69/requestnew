@@ -6,8 +6,8 @@ import { useSession } from 'next-auth/react';
 import { submitF07 } from '@/app/actions/f07-action';
 import { requesterRoles } from '@/lib/auth-constants';
 import { useCategories } from '@/app/context/CategoryContext';
+import { logoutToLogin } from '@/lib/client-logout';
 
-type CategoryItem = { CategoryID: number; CategoryName: string; locations?: { id: number; name: string }[] };
 type CorrectionTypeItem = {
   CorrectionTypeID: number;
   Name: string;
@@ -109,6 +109,7 @@ export default function NewRequestPage() {
   const [reason, setReason] = useState('');
   const [systemType, setSystemType] = useState('ERP SoftPRO');
   const [systemTypeOther, setSystemTypeOther] = useState('');
+  const [requiresAccountRecheck, setRequiresAccountRecheck] = useState(false);
   const [selectedTypeIds, setSelectedTypeIds] = useState<number[]>([]);
   const [activeDetailTab, setActiveDetailTab] = useState(0);
   const [dynamicFieldValues, setDynamicFieldValues] = useState<Record<number, Record<string, string>>>({});
@@ -130,7 +131,7 @@ export default function NewRequestPage() {
     fetch('/api/me', { credentials: 'same-origin' })
       .then(async (r) => {
         if (r.ok) return r.json();
-        if (r.status === 401) (await import('next-auth/react')).signOut({ callbackUrl: '/login' });
+        if (r.status === 401) void logoutToLogin();
         return null;
       })
       .then((data) => setUserMe(data ? data.user : null))
@@ -246,6 +247,7 @@ export default function NewRequestPage() {
       formData.set('systemType', systemType === 'อื่นๆ' ? systemTypeOther : systemType);
       if (systemType === 'อื่นๆ') formData.set('systemTypeOther', systemTypeOther);
       formData.set('isMoneyRelated', 'false');
+      formData.set('requiresAccountRecheck', String(requiresAccountRecheck));
       formData.set('correctionTypeIds', JSON.stringify(selectedTypeIds));
       for (const file of selectedFiles) formData.append('attachments', file);
       const result = await submitF07(formData);
@@ -263,7 +265,7 @@ export default function NewRequestPage() {
       setSubmitError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด');
       setSubmitting(false);
     }
-  }, [userMe, locationId, categoryId, reason, systemType, systemTypeOther, problemDetailBuilt, selectedTypeIds, selectedFiles, requestDepartmentId, router]);
+  }, [userMe, locationId, categoryId, reason, systemType, systemTypeOther, requiresAccountRecheck, problemDetailBuilt, selectedTypeIds, selectedFiles, requestDepartmentId, router]);
 
   if (!userMe && categories.length === 0) {
     return (
@@ -393,6 +395,22 @@ export default function NewRequestPage() {
               </>
             )}
           </div>
+          <label className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={requiresAccountRecheck}
+              onChange={(e) => setRequiresAccountRecheck(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">
+                หลังจาก IT แก้ไขข้อมูลแล้ว ให้ฝ่ายบัญชีตรวจสอบอีกครั้งก่อนปิดงาน
+              </span>
+              <span className="mt-1 block text-xs text-gray-600">
+                หากไม่เลือก ระบบจะส่งคำขอให้ IT ตรวจรับและปิดงานต่อทันทีหลังแก้ไขเสร็จ
+              </span>
+            </span>
+          </label>
           <div className="flex justify-end gap-2 pt-4">
             <button
               type="button"
@@ -614,6 +632,12 @@ export default function NewRequestPage() {
                 <div><dt className="text-gray-500">สถานที่/ศูนย์ขนถ่าย</dt><dd className="font-medium break-all">{locations.find((l) => String(l.id) === locationId)?.name ?? '—'}</dd></div>
                 <div><dt className="text-gray-500">เหตุผล</dt><dd className="font-medium whitespace-pre-wrap break-all">{reason || '—'}</dd></div>
                 <div><dt className="text-gray-500">ระบบ</dt><dd className="font-medium break-all">{systemType === 'อื่นๆ' ? systemTypeOther : systemType}</dd></div>
+                <div>
+                  <dt className="text-gray-500">ตรวจสอบหลัง IT แก้ไข</dt>
+                  <dd className="font-medium">
+                    {requiresAccountRecheck ? 'ให้ฝ่ายบัญชีตรวจสอบอีกครั้ง' : 'ส่งตรงไปยัง IT Reviewer'}
+                  </dd>
+                </div>
               </dl>
             </div>
             <div className="rounded-lg border border-gray-200 p-4 bg-gray-50/50">

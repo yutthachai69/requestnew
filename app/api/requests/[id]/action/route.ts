@@ -17,6 +17,7 @@ const ERROR_STATUS: Record<ApprovalErrorCode, number> = {
   FORBIDDEN: 403,
   NO_TRANSITION: 400,
   ALREADY_APPROVED: 400,
+  CONFLICT: 409,
 };
 
 /**
@@ -60,6 +61,7 @@ export async function POST(
     }
 
     const outcome = await executeApproval({
+      expectedUpdatedAt: typeof body.updatedAt === 'string' ? body.updatedAt : '',
       requestId: id,
       actionName,
       comment,
@@ -73,7 +75,7 @@ export async function POST(
 
     if (!outcome.ok) {
       return NextResponse.json(
-        { message: outcome.message },
+        { message: outcome.message, code: outcome.code },
         { status: ERROR_STATUS[outcome.code] }
       );
     }

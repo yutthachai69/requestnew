@@ -22,7 +22,8 @@ export type ApprovalActionResult = {
 
 export async function handleApprovalAction(
   token: string,
-  status: 'APPROVED' | 'REJECTED'
+  status: 'APPROVED' | 'REJECTED',
+  expectedUpdatedAt: string,
 ): Promise<ApprovalActionResult> {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -39,6 +40,7 @@ export async function handleApprovalAction(
 
   try {
     const outcome = await executeApprovalByToken({
+      expectedUpdatedAt,
       token,
       status,
       actor: {

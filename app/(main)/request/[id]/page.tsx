@@ -25,6 +25,7 @@ type RequestDetail = {
   problemDetail: string;
   systemType: string;
   isMoneyRelated: boolean;
+  requiresAccountRecheck: boolean;
   status: string;
   currentStatusId?: number | null;
   currentStatus?: { id: number; code: string; displayName: string; colorCode?: string } | null;
@@ -65,7 +66,11 @@ export default function RequestDetailPage() {
   }, [searchParams]);
   const { showNotification } = useNotification();
   const { refresh, notifications, markAsRead } = useAppNotification();
-  const currentUserId = session?.user ? Number((session.user as { id?: string }).id) : null;
+  const sessionUser = session?.user as { id?: string; roleName?: string } | undefined;
+  const currentUserId = sessionUser ? Number(sessionUser.id) : null;
+  const roleName = sessionUser?.roleName;
+  const isITReviewer = ['IT Reviewer', 'It viewer', 'IT Veiwer'].includes(roleName ?? '');
+  const isITOperator = ['IT', 'It operetor', 'It operator', 'IT Operator', 'It Operator'].includes(roleName ?? '');
   const [request, setRequest] = useState<RequestDetail | null>(null);
 
   useEffect(() => {
@@ -81,6 +86,7 @@ export default function RequestDetailPage() {
   }, [id, notifications, markAsRead]);
   const [possibleActions, setPossibleActions] = useState<ActionItem[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [currentRoundHistory, setCurrentRoundHistory] = useState<HistoryItem[]>([]);
   const [resolvedBy, setResolvedBy] = useState<string | null>(null);
   const [resolvedAt, setResolvedAt] = useState<string | null>(null);
   const [approvedByITViewer, setApprovedByITViewer] = useState<string | null>(null);
@@ -111,6 +117,7 @@ export default function RequestDetailPage() {
         setRequest(data.request);
         setPossibleActions(data.possibleActions ?? []);
         setHistory(data.history ?? []);
+        setCurrentRoundHistory(data.currentRoundHistory ?? []);
         setResolvedBy(data.resolvedBy ?? null);
         setResolvedAt(data.resolvedAt ?? null);
         setApprovedByITViewer(data.approvedByITViewer ?? null);
@@ -143,7 +150,7 @@ export default function RequestDetailPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ actionName: action.ActionName, comment: comment.trim() || undefined }),
+        body: JSON.stringify({ actionName: action.ActionName, comment: comment.trim() || undefined, updatedAt: request?.updatedAt }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? 'ดำเนินการไม่สำเร็จ');
@@ -157,6 +164,7 @@ export default function RequestDetailPage() {
         setRequest(refetchData.request);              // ✅ อัพเดต request + status + currentStatus
         setPossibleActions(refetchData.possibleActions ?? []); // ✅ อัพเดตปุ่มที่กดได้
         setHistory(refetchData.history ?? []);
+        setCurrentRoundHistory(refetchData.currentRoundHistory ?? []);
         setResolvedBy(refetchData.resolvedBy ?? null);
         setResolvedAt(refetchData.resolvedAt ?? null);
         setApprovedByITViewer(refetchData.approvedByITViewer ?? null);
@@ -184,7 +192,7 @@ export default function RequestDetailPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
           {error ?? 'ไม่พบข้อมูลคำร้อง'}
         </div>
-        <Link href="/dashboard" className="mt-4 inline-block text-blue-600 hover:underline">
+        <Link href="/dashboard" className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไป Dashboard
         </Link>
       </div>
@@ -195,7 +203,7 @@ export default function RequestDetailPage() {
 
   /** หาชื่อผู้อนุมัติจากประวัติ — รองรับทั้งชื่อ role ภาษาอังกฤษและไทย */
   const approvedByAnyRole = (roleNames: string[]) => {
-    const entry = [...history].reverse().find((h) => h.ActionType === 'อนุมัติ' && roleNames.includes(h.RoleName));
+    const entry = [...currentRoundHistory].reverse().find((h) => h.ActionType === 'อนุมัติ' && roleNames.includes(h.RoleName));
     return entry ? { name: entry.FullName, url: entry.SignatureUrl ?? null } : undefined;
   };
   const signatures = {
@@ -214,6 +222,7 @@ export default function RequestDetailPage() {
     position: request.requester?.position ?? null,
     problemDetail: request.problemDetail,
     systemType: request.systemType,
+    requiresAccountRecheck: request.requiresAccountRecheck,
     createdAt: request.createdAt,
     department: request.department,
     location: request.location,
@@ -223,7 +232,7 @@ export default function RequestDetailPage() {
   return (
     <div className="w-full p-6 bg-gray-100 min-h-screen">
       <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
-        <Link href="/dashboard" className="text-blue-600 hover:underline text-sm">
+        <Link href="/dashboard" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไป Dashboard
         </Link>
         <div className="flex items-center gap-2 flex-wrap">
@@ -315,13 +324,23 @@ export default function RequestDetailPage() {
                 ))}
               </div>
             </div>
-          ) : request.status === 'WAITING_ACCOUNT_2' ? (
+          ) : request.status === 'WAITING_ACCOUNT_2' && (isITReviewer || isITOperator) ? (
             <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-              <strong>ขั้นนี้:</strong> ต้องให้บัญชีอนุมัติก่อน สถานะจะเปลี่ยนเป็น &quot;รอ IT ปิดงาน&quot; แล้วคุณ (IT Reviewer) จะเห็นปุ่ม &quot;ยืนยันปิดงาน&quot;
+              {isITOperator ? (
+                <>
+                  <strong>กำลังรอฝ่ายบัญชีตรวจสอบ</strong>
+                  <span className="block mt-1">คุณดำเนินการแก้ไขในระบบเสร็จแล้ว เมื่อฝ่ายบัญชีตรวจสอบเสร็จ คำขอจะส่งต่อให้ IT Reviewer ยืนยันปิดงาน</span>
+                </>
+              ) : (
+                <>
+                  <strong>กำลังรอฝ่ายบัญชีตรวจสอบ</strong>
+                  <span className="block mt-1">เมื่อฝ่ายบัญชีตรวจสอบเสร็จ คุณจะเห็นปุ่ม “ยืนยันปิดงาน” เพื่อปิดคำขอ</span>
+                </>
+              )}
             </div>
-          ) : request.status === 'WAITING_IT_CLOSE' ? (
+          ) : request.status === 'WAITING_IT_CLOSE' && isITReviewer ? (
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
-              <strong>รอ IT ปิดงาน:</strong> ถ้าคุณเป็น IT Reviewer แต่ปุ่ม &quot;ยืนยันปิดงาน&quot; ไม่ขึ้น ให้รัน <code className="bg-blue-100 px-1 rounded">npm run db:seed</code> แล้วรีเฟรชหรือล็อกอินใหม่
+              <strong>รอ IT ปิดงาน:</strong> ตรวจสอบผลการแก้ไข แล้วกด “ยืนยันปิดงาน” เพื่อปิดคำขอ
             </div>
           ) : null}
 

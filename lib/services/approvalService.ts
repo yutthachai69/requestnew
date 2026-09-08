@@ -20,6 +20,7 @@ import {
   notifyAdminsOfStalledRequest,
 } from '@/lib/notification';
 import { withTransactionRetry, TRANSACTION_OPTIONS } from '@/lib/transaction-retry';
+import { matchesRequestVersion, nextRequestTimestamp } from '@/lib/request-concurrency';
 
 export const ALLOWED_ACTIONS = ['APPROVE', 'REJECT', 'IT_PROCESS', 'CONFIRM_COMPLETE'] as const;
 export type AllowedActionName = (typeof ALLOWED_ACTIONS)[number];
@@ -34,7 +35,8 @@ export type ApprovalErrorCode =
   | 'REJECT_NO_COMMENT'
   | 'FORBIDDEN'
   | 'NO_TRANSITION'
-  | 'ALREADY_APPROVED';
+  | 'ALREADY_APPROVED'
+  | 'CONFLICT';
 
 export interface ApprovalActor {
   userId: number;
@@ -44,6 +46,8 @@ export interface ApprovalActor {
 }
 
 export interface ExecuteApprovalInput {
+  expectedUpdatedAt: string;
+  expectedToken?: string;
   requestId: number;
   actionName: string;
   comment?: string;
@@ -52,6 +56,7 @@ export interface ExecuteApprovalInput {
 }
 
 export interface ExecuteApprovalByTokenInput {
+  expectedUpdatedAt: string;
   token: string;
   status: 'APPROVED' | 'REJECTED';
   actor: ApprovalActor;
@@ -87,11 +92,22 @@ const requestSelect = {
   status: true,
   currentStatusId: true,
   currentStatus: { select: { id: true, code: true, displayName: true } },
+  requiresAccountRecheck: true,
+  workflowVersionId: true,
   requesterId: true,
+  updatedAt: true,
+  approvalRound: true,
+  approvalToken: true,
   requester: { select: { id: true, email: true, fullName: true } },
 } as const;
 
 type RequestRow = Prisma.ITRequestF07GetPayload<{ select: typeof requestSelect }>;
+
+export function getNextStatusAfterItProcess(requiresAccountRecheck: boolean):
+  | 'WAITING_ACCOUNT_2'
+  | 'WAITING_IT_CLOSE' {
+  return requiresAccountRecheck ? 'WAITING_ACCOUNT_2' : 'WAITING_IT_CLOSE';
+}
 
 export function resolveActionForApprovalIntent(
   transitions: TransitionWithRelations[],
@@ -130,6 +146,33 @@ export function isSpecialApproverAuthorized(
   return mappedUserId == null || mappedUserId === actorUserId;
 }
 
+/**
+ * กฎเดียวที่ใช้ทั้งตอนแสดงปุ่มดำเนินการและตอนตรวจสิทธิ์จริงตอนกด
+ *
+ * แยกออกมาเพื่อไม่ให้หน้าจอเสนอปุ่มที่ server จะปฏิเสธ (หรือซ่อนปุ่มที่กดได้จริง)
+ * ส่วน role/action match ยังเป็นของ `findAuthorizedTransition` ตามช่องทางที่เรียก
+ */
+export function filterTransitionsForActor<
+  T extends Pick<TransitionWithRelations, 'filterByDepartment' | 'stepSequence'>
+>(
+  transitions: T[],
+  context: {
+    requestDepartmentId: number;
+    actorUserId: number;
+    actorDepartmentId: number | null | undefined;
+    specialApproverByStep: Map<number, number>;
+  }
+): T[] {
+  return transitions.filter(
+    (transition) =>
+      isDepartmentAuthorized(transition, context.requestDepartmentId, context.actorDepartmentId) &&
+      isSpecialApproverAuthorized(
+        context.specialApproverByStep.get(transition.stepSequence),
+        context.actorUserId,
+      ),
+  );
+}
+
 async function getCorrectionTypeIds(requestId: number): Promise<number[]> {
   const rows = await prisma.requestCorrectionType.findMany({
     where: { requestId },
@@ -142,12 +185,14 @@ async function userAlreadyApprovedStep(
   tx: Prisma.TransactionClient,
   requestId: number,
   userId: number,
-  stepSequence: number
+  stepSequence: number,
+  approvalRound: number,
 ): Promise<boolean> {
   const existing = await tx.approvalHistory.findFirst({
     where: {
       requestId,
       approverId: userId,
+      approvalRound,
       approvalLevel: stepSequence,
       actionType: { in: [...APPROVAL_HISTORY_ACTIONS] },
     },
@@ -175,25 +220,33 @@ async function runApprovalTransaction(
   const sourceLabel = source === 'email' ? 'ผ่านลิงก์อีเมล' : '';
 
   return withTransactionRetry(() => prisma.$transaction(async (tx) => {
+    // Claim the exact version before numbering or writing history, including
+    // WAITING approvals. This lock is held until all writes commit/rollback.
+    const expectedUpdatedAt = nextRequestTimestamp(req.updatedAt);
+    const claimed = await tx.iTRequestF07.updateMany({
+      where: { id, currentStatusId, approvalRound: req.approvalRound, updatedAt: req.updatedAt },
+      data: { updatedAt: expectedUpdatedAt },
+    });
+    if (claimed.count !== 1) throw new Error('REQUEST_CONFLICT');
     let workOrderNo = req.workOrderNo;
     if (!workOrderNo && actionName !== 'REJECT') {
       workOrderNo = await generateRequestNumber(tx, req.categoryId);
-      await tx.iTRequestF07.update({ where: { id }, data: { workOrderNo } });
+      await tx.iTRequestF07.update({ where: { id }, data: { workOrderNo, updatedAt: expectedUpdatedAt } });
     }
 
     const requestData = { requestId: id, requestNumber: workOrderNo ?? undefined };
 
     if (actionName === 'REJECT') {
       const rejected = await tx.iTRequestF07.updateMany({
-        where: { id, currentStatusId },
+        where: { id, currentStatusId, updatedAt: expectedUpdatedAt },
         data: {
           status: nextCode,
           currentStatusId: nextStatusId,
           approvalToken: null,
-          updatedAt: new Date(),
+          updatedAt: expectedUpdatedAt,
         },
       });
-      if (rejected.count !== 1) throw new Error('ALREADY_APPROVED');
+      if (rejected.count !== 1) throw new Error('REQUEST_CONFLICT');
       await tx.auditLog.create({
         data: {
           action: 'REJECT',
@@ -207,6 +260,7 @@ async function runApprovalTransaction(
         data: {
           requestId: id,
           approverId: actor.userId,
+          approvalRound: req.approvalRound,
           approvalLevel: transition.stepSequence,
           actionType: 'Reject',
           comment: comment || null,
@@ -215,7 +269,13 @@ async function runApprovalTransaction(
       return { type: 'REJECT', nextStatusId, nextCode, requestData };
     }
 
-    const alreadyApproved = await userAlreadyApprovedStep(tx, id, actor.userId, transition.stepSequence);
+    const alreadyApproved = await userAlreadyApprovedStep(
+      tx,
+      id,
+      actor.userId,
+      transition.stepSequence,
+      req.approvalRound,
+    );
     if (alreadyApproved) {
       throw new Error('ALREADY_APPROVED');
     }
@@ -224,6 +284,7 @@ async function runApprovalTransaction(
       data: {
         requestId: id,
         approverId: actor.userId,
+        approvalRound: req.approvalRound,
         approvalLevel: transition.stepSequence,
         actionType: actionName === 'APPROVE' ? 'Approve' : actionName,
         comment: comment || null,
@@ -254,16 +315,16 @@ async function runApprovalTransaction(
     const newToken = isClosing ? null : crypto.randomUUID();
 
     const updated = await tx.iTRequestF07.updateMany({
-      where: { id, currentStatusId },
+      where: { id, currentStatusId, updatedAt: expectedUpdatedAt },
       data: {
         status: nextCode,
         currentStatusId: nextStatusId,
         currentApprovalStep: transition.stepSequence,
         approvalToken: newToken,
-        updatedAt: new Date(),
+        updatedAt: expectedUpdatedAt,
       },
     });
-    if (updated.count !== 1) throw new Error('ALREADY_APPROVED');
+    if (updated.count !== 1) throw new Error('REQUEST_CONFLICT');
 
     await tx.auditLog.create({
       data: {
@@ -293,13 +354,13 @@ async function sendPostApprovalNotifications(
   correctionTypeIds: number[]
 ): Promise<void> {
   if (result.type === 'REJECT') {
+    await createNotification(
+      req.requesterId,
+      `คำร้องของคุณ (#${req.workOrderNo ?? result.requestData.requestNumber}) ถูกส่งกลับแก้ไข กรุณาตรวจสอบและแก้ไขคำร้อง`,
+      req.id,
+    );
     if (req.requester?.email) {
       try {
-        await createNotification(
-          req.requesterId,
-          `คำร้องของคุณ (#${req.workOrderNo ?? result.requestData.requestNumber}) ถูกส่งกลับแก้ไข กรุณาตรวจสอบและแก้ไขคำร้อง`,
-          req.id
-        );
         const { subject, body } = getRevisionEmail(result.requestData, { fullName: req.requester.fullName });
         await sendApprovalEmail({ to: [req.requester.email], subject, body });
       } catch (err) {
@@ -317,13 +378,13 @@ async function sendPostApprovalNotifications(
   }
 
   if (result.isClosing) {
+    await createNotification(
+      req.requesterId,
+      `คำร้องของคุณ (#${req.workOrderNo ?? result.requestData.requestNumber}) ดำเนินการเสร็จสิ้นแล้ว`,
+      req.id,
+    );
     if (req.requester?.email) {
       try {
-        await createNotification(
-          req.requesterId,
-          `คำร้องของคุณ (#${req.workOrderNo ?? result.requestData.requestNumber}) ดำเนินการเสร็จสิ้นแล้ว`,
-          req.id
-        );
         const { subject, body } = getCompletionEmail(result.requestData, { fullName: req.requester.fullName });
         await sendApprovalEmail({ to: [req.requester.email], subject, body });
       } catch (err) {
@@ -338,7 +399,9 @@ async function sendPostApprovalNotifications(
     result.nextStatusId,
     req.departmentId ?? undefined,
     null,
-    correctionTypeIds
+    correctionTypeIds,
+    req.workflowVersionId,
+    req.requiresAccountRecheck
   );
 
   if (nextApprovers.length === 0) {
@@ -373,9 +436,12 @@ async function sendPostApprovalNotifications(
   }
 
   if (emails.length === 0) {
-    console.warn(
-      `[mail] ผู้อนุมัติ ${nextApprovers.length} คน ไม่มีอีเมลในระบบ — คำร้อง #${req.workOrderNo ?? req.id}`
-    );
+    // แจ้งเตือนในระบบถูกสร้างไปแล้วข้างบน แต่ไม่มีทางส่งเมล — ให้ Admin ตามได้
+    await notifyAdminsOfStalledRequest({
+      requestId: req.id,
+      workOrderNo: result.requestData.requestNumber ?? req.workOrderNo,
+      reason: `ผู้อนุมัติขั้น "${result.nextStatusDisplayName}" ${nextApprovers.length} คน ไม่มีอีเมลในระบบ — แจ้งเตือนในระบบถูกสร้างแล้วแต่ไม่ได้ส่งเมล`,
+    });
     return;
   }
 
@@ -423,6 +489,10 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
   if (!req) {
     return { ok: false, code: 'NOT_FOUND', message: 'ไม่พบคำร้อง' };
   }
+  if (!matchesRequestVersion(input.expectedUpdatedAt, req.updatedAt) ||
+      (input.expectedToken !== undefined && input.expectedToken !== req.approvalToken)) {
+    return { ok: false, code: 'CONFLICT', message: 'คำร้องเปลี่ยนไปแล้ว กรุณาโหลดข้อมูลล่าสุดและตรวจสอบก่อนดำเนินการ' };
+  }
 
   const actor = await prisma.user.findUnique({
     where: { id: input.actor.userId },
@@ -442,10 +512,12 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
     categoryId: req.categoryId,
     currentStatusId: req.currentStatusId ?? 1,
     correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
+    workflowVersionId: req.workflowVersionId,
+    requiresAccountRecheck: req.requiresAccountRecheck,
   });
 
-  const transition = findAuthorizedTransition(transitions, actionName, actor.role.roleName);
-  if (!transition) {
+  const authorizedTransition = findAuthorizedTransition(transitions, actionName, actor.role.roleName);
+  if (!authorizedTransition) {
     if (transitions.length > 0) {
       return {
         ok: false,
@@ -455,6 +527,8 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
     }
     return { ok: false, code: 'NO_TRANSITION', message: 'ไม่พบขั้นตอนถัดไปสำหรับสถานะนี้ (No Transition Found)' };
   }
+
+  const transition = authorizedTransition;
 
   if (!isDepartmentAuthorized(transition, req.departmentId, actor.departmentId)) {
     return { ok: false, code: 'FORBIDDEN', message: 'ผู้อนุมัติอยู่นอกแผนกของคำร้องนี้' };
@@ -482,10 +556,18 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
       comment,
       input.source
     );
-    await sendPostApprovalNotifications(req, result, correctionTypeIds);
+    try {
+      await sendPostApprovalNotifications(req, result, correctionTypeIds);
+    } catch (error) {
+      console.error('[notify] Failed after committed approval', { requestId: req.id, error });
+    }
     // ผู้กระทำเพิ่งอนุมัติ/ปฏิเสธคำร้องนี้ไปแล้ว — แจ้งเตือน "รออนุมัติ" เดิมของเขาถือว่าอ่านแล้ว
     // (ครอบคลุมทุกช่องทาง: dashboard, ลิงก์อีเมล)
-    await markNotificationsReadForRequests(input.actor.userId, [req.id]);
+    try {
+      await markNotificationsReadForRequests(input.actor.userId, [req.id]);
+    } catch (error) {
+      console.error('[notify] Failed to mark read after committed approval', { requestId: req.id, error });
+    }
     return { ok: true, ...result };
   } catch (e) {
     if (e instanceof Error && e.message === 'ALREADY_APPROVED') {
@@ -493,6 +575,13 @@ export async function executeApproval(input: ExecuteApprovalInput): Promise<Appr
         ok: false,
         code: 'ALREADY_APPROVED',
         message: 'คุณดำเนินการขั้นนี้ไปแล้ว',
+      };
+    }
+    if (e instanceof Error && e.message === 'REQUEST_CONFLICT') {
+      return {
+        ok: false,
+        code: 'CONFLICT',
+        message: 'คำร้องถูกแก้ไขหรือดำเนินการไปแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนลองใหม่',
       };
     }
     throw e;
@@ -522,6 +611,8 @@ export async function executeApprovalByToken(input: ExecuteApprovalByTokenInput)
     categoryId: request.categoryId,
     currentStatusId: request.currentStatusId ?? 1,
     correctionTypeIds: correctionTypeIds.length ? correctionTypeIds : undefined,
+    workflowVersionId: request.workflowVersionId,
+    requiresAccountRecheck: request.requiresAccountRecheck,
   });
 
   if (transitions.length === 0) {
@@ -538,6 +629,8 @@ export async function executeApprovalByToken(input: ExecuteApprovalByTokenInput)
     (input.status === 'REJECTED' ? 'ปฏิเสธผ่านลิงก์อีเมล' : '');
 
   return executeApproval({
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    expectedToken: input.token,
     requestId: request.id,
     actionName,
     comment,

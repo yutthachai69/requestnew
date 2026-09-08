@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       requestIds?: unknown;
       actionName?: unknown;
       comment?: unknown;
+      versions?: Record<string, unknown>;
     };
     const requestIds = Array.isArray(body.requestIds)
       ? [...new Set(body.requestIds
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
     // state and avoids concurrent actions racing the same request.
     for (const requestId of requestIds) {
       const result = await executeApproval({
+        expectedUpdatedAt: typeof body.versions?.[requestId] === 'string' ? body.versions[requestId] as string : '',
         requestId,
         actionName,
         comment,

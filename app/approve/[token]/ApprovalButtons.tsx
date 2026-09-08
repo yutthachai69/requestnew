@@ -4,13 +4,13 @@
 import { useState } from 'react';
 import { handleApprovalAction } from '@/app/actions/approve-action'; // เดี๋ยวสร้างไฟล์นี้ต่อ
 
-export default function ApprovalButtons({ token }: { token: string }) {
+export default function ApprovalButtons({ token, updatedAt }: { token: string; updatedAt: string }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   const onAction = async (status: 'APPROVED' | 'REJECTED') => {
     setLoading(true);
-    const result = await handleApprovalAction(token, status);
+    const result = await handleApprovalAction(token, status, updatedAt);
     if (result.success) {
       setMessage(result.message ?? `ดำเนินการ ${status === 'APPROVED' ? 'อนุมัติ' : 'ปฏิเสธ'} เรียบร้อยแล้ว`);
     } else {
