@@ -120,8 +120,10 @@ export default function DashboardPage() {
 
   // Tabs Logic
   const TABS = useMemo(() => {
-    if (roleName === 'IT Reviewer') return ALL_TABS.filter((t) => t.status !== 'APPROVED');
-    if (roleName === 'IT') {
+    const isITReviewer = ['IT Reviewer', 'It viewer', 'IT Veiwer'].includes(roleName ?? '');
+    const isITOperator = ['IT', 'It operetor', 'It operator', 'IT Operator', 'It Operator'].includes(roleName ?? '');
+    if (isITReviewer) return ALL_TABS.filter((t) => t.status !== 'APPROVED');
+    if (isITOperator) {
       return ALL_TABS.map((t) =>
         t.status === 'APPROVED' ? { ...t, label: 'ดำเนินการแล้ว' } : t
       );
@@ -149,7 +151,9 @@ export default function DashboardPage() {
   const applyStatsFromResponse = useCallback(
     (statsData: { byStatus?: { status: string; count: number }[]; requestCountByCategory?: typeof categoryStats }) => {
       const byStatus = statsData.byStatus ?? [];
-      const APPROVED_STATUSES = ['IT_WORKING', 'WAITING_IT_CLOSE', 'APPROVED'];
+      // หลังอนุมัติขั้นสุดท้าย งาน IT และการตรวจปิดงานยังไม่เสร็จ
+      // จึงต้องอยู่ใน "รอดำเนินการ" จนกว่าจะเป็น CLOSED จริง
+      const APPROVED_STATUSES = ['APPROVED'];
       let pending = 0,
         approved = 0,
         rejected = 0,
@@ -293,7 +297,7 @@ export default function DashboardPage() {
             ภาพรวมคำร้อง
           </h1>
           <p className="text-gray-500 mt-2 text-sm sm:text-base">
-            ติดตามสถานะและข้อมูลใบงาน F07 ทั้งหมดในระบบของคุณ
+            ติดตามงานที่เกี่ยวข้องกับสิทธิ์ของคุณและประวัติการดำเนินการ
           </p>
         </div>
         <div className="flex items-center gap-3">

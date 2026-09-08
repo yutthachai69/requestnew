@@ -9,6 +9,7 @@ import { useNotification } from '@/app/context/NotificationContext';
 import { useAppNotification } from '@/app/context/AppNotificationContext';
 
 type PendingItem = {
+  updatedAt: string;
   id: number;
   workOrderNo: string | null;
   RequestNumber: string | null;
@@ -115,6 +116,7 @@ export default function PendingTasksPage() {
         credentials: 'same-origin',
         body: JSON.stringify({
           requestIds: selected,
+          versions: Object.fromEntries(requests.filter((r) => selected.includes(r.id)).map((r) => [r.id, r.updatedAt])),
           actionName: bulkDialog.action,
           comment: bulkDialog.comment.trim() || undefined,
         }),

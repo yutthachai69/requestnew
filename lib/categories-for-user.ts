@@ -13,6 +13,7 @@ export async function getCategoriesForUser(
 ): Promise<CategoryListItem[]> {
   if (roleName === 'Admin') {
     const categories = await prisma.category.findMany({
+      where: { isWorkflowTemplate: false },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -35,6 +36,7 @@ export async function getCategoriesForUser(
     where: { id: userId },
     select: {
       accessibleCategories: {
+        where: { isWorkflowTemplate: false },
         orderBy: { name: 'asc' },
         select: {
           id: true,

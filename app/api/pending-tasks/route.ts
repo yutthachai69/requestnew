@@ -59,9 +59,12 @@ export async function GET() {
           approverId: userId,
           actionType: { in: APPROVAL_DONE_TYPES },
         },
-        select: { requestId: true, approvalLevel: true },
+        select: { requestId: true, approvalRound: true, approvalLevel: true },
       });
-      const done = new Set(histories.map((h) => `${h.requestId}-${Number(h.approvalLevel)}`));
+      const roundByRequest = new Map(requests.map((r) => [r.id, r.approvalRound]));
+      const done = new Set(histories
+        .filter((h) => h.approvalRound === roundByRequest.get(h.requestId))
+        .map((h) => `${h.requestId}-${Number(h.approvalLevel)}`));
 
       requests = requests.filter((r) => {
         const key = `${r.categoryId}-${r.currentStatusId ?? 1}`;
@@ -86,6 +89,7 @@ function toPendingItem(r: {
   problemDetail: string;
   status: string | null;
   createdAt: Date;
+  updatedAt: Date;
   approvalToken: string | null;
   currentStatusId?: number;
   currentApprovalStep?: number;
@@ -108,6 +112,7 @@ function toPendingItem(r: {
     currentApprovalStep: r.currentApprovalStep ?? 1,
     approvalToken: r.approvalToken,
     createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
     department: r.department,
     category: r.category,
     location: r.location,

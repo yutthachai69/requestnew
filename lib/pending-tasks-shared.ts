@@ -3,14 +3,17 @@
  */
 import { prisma } from '@/lib/prisma';
 import { approverRoles, getCanonicalRoleNamesForApprover } from '@/lib/auth-constants';
+import { conditionMatches } from '@/lib/workflow-versioning';
 
 const APPROVAL_DONE_TYPES = ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'];
 
 export type PendingTransitionMeta = {
   categoryId: number;
+  workflowVersionId: number | null;
   currentStatusId: number;
   filterByDepartment: boolean;
   stepSequences: number[];
+  conditionKeys: string[];
 };
 
 /** โหลด transition ที่ user นี้ดูแลได้ (รวม special approver) */
@@ -56,9 +59,11 @@ export async function getPendingTransitionMetaForUser(
     where: { requiredRoleId: { in: roleIds } },
     select: {
       categoryId: true,
+      workflowVersionId: true,
       currentStatusId: true,
       filterByDepartment: true,
       stepSequence: true,
+      conditionKey: true,
     },
   });
 
@@ -73,18 +78,21 @@ export async function getPendingTransitionMetaForUser(
 
   const byKey = new Map<string, PendingTransitionMeta>();
   for (const t of myTransitions) {
-    const key = `${t.categoryId}-${t.currentStatusId}`;
+    const key = `${t.categoryId}-${t.currentStatusId}-${t.workflowVersionId ?? 0}`;
     const existing = byKey.get(key);
     if (existing) {
       if (!existing.stepSequences.includes(t.stepSequence)) {
         existing.stepSequences.push(t.stepSequence);
       }
+      if (t.conditionKey && !existing.conditionKeys.includes(t.conditionKey)) existing.conditionKeys.push(t.conditionKey);
     } else {
       byKey.set(key, {
         categoryId: t.categoryId,
+        workflowVersionId: t.workflowVersionId,
         currentStatusId: t.currentStatusId,
         filterByDepartment: t.filterByDepartment,
         stepSequences: [t.stepSequence],
+        conditionKeys: [t.conditionKey || 'ALWAYS'],
       });
     }
   }
@@ -104,7 +112,7 @@ export async function countPendingTasksForUser(userId: number, roleName: string)
   const categoryIds = [...new Set(meta.transitions.map((t) => t.categoryId))];
   const transitionByKey = new Map<string, PendingTransitionMeta>();
   meta.transitions.forEach((t) => {
-    transitionByKey.set(`${t.categoryId}-${t.currentStatusId}`, t);
+    transitionByKey.set(`${t.categoryId}-${t.currentStatusId}-${t.workflowVersionId ?? 0}`, t);
   });
 
   const candidates = await prisma.iTRequestF07.findMany({
@@ -112,14 +120,15 @@ export async function countPendingTasksForUser(userId: number, roleName: string)
       categoryId: { in: categoryIds },
       currentStatusId: { notIn: meta.closedStatusIds.length ? meta.closedStatusIds : [0] },
     },
-    select: { id: true, categoryId: true, currentStatusId: true, departmentId: true },
+    select: { id: true, categoryId: true, workflowVersionId: true, requiresAccountRecheck: true, approvalRound: true, currentStatusId: true, departmentId: true },
   });
 
   const matched = candidates.filter((r) => {
-    const key = `${r.categoryId}-${r.currentStatusId ?? 1}`;
+    const key = `${r.categoryId}-${r.currentStatusId ?? 1}-${r.workflowVersionId ?? 0}`;
     const t = transitionByKey.get(key);
     if (!t) return false;
     if (t.filterByDepartment && r.departmentId !== meta.departmentId) return false;
+    if (!t.conditionKeys.some((key) => conditionMatches(key, r.requiresAccountRecheck))) return false;
     return true;
   });
 
@@ -131,15 +140,19 @@ export async function countPendingTasksForUser(userId: number, roleName: string)
       approverId: userId,
       actionType: { in: APPROVAL_DONE_TYPES },
     },
-    select: { requestId: true, approvalLevel: true },
+    select: { requestId: true, approvalRound: true, approvalLevel: true },
   });
 
-  const done = new Set(histories.map((h) => `${h.requestId}-${Number(h.approvalLevel)}`));
+  const roundByRequest = new Map(matched.map((r) => [r.id, r.approvalRound]));
+  const done = new Set(histories
+    .filter((h) => h.approvalRound === roundByRequest.get(h.requestId))
+    .map((h) => `${h.requestId}-${Number(h.approvalLevel)}`));
 
   return matched.filter((r) => {
-    const key = `${r.categoryId}-${r.currentStatusId ?? 1}`;
+    const key = `${r.categoryId}-${r.currentStatusId ?? 1}-${r.workflowVersionId ?? 0}`;
     const t = transitionByKey.get(key);
     if (!t) return false;
+    if (!t.conditionKeys.some((condition) => conditionMatches(condition, r.requiresAccountRecheck))) return false;
     return t.stepSequences.some((seq) => !done.has(`${r.id}-${seq}`));
   }).length;
 }

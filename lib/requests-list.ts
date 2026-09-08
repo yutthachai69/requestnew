@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/prisma';
-import { approverRoles, getCanonicalRoleNamesForApprover } from '@/lib/auth-constants';
+import { approverRoles } from '@/lib/auth-constants';
 import {
   APPROVAL_DONE_ACTION_TYPES,
   REJECT_ACTION_TYPES,
 } from '@/lib/approval-actions';
 import { buildDateRangeFilter } from '@/lib/date-range';
+import { getRoleScopedRequestIds } from '@/lib/request-scope';
 
 export type RequestsListParams = {
   categoryId?: string;
@@ -120,65 +121,30 @@ export async function fetchRequestsList(
   if (roleName === 'Admin') {
     if (searchFilter) where.OR = searchFilter;
   } else if (roleName && approverRoles.includes(roleName)) {
-    const canonicalNames = getCanonicalRoleNamesForApprover(roleName);
+    // ใช้ขอบเขตเดียวกับ Dashboard: งานที่ Role นี้รับผิดชอบอยู่
+    // และประวัติที่ผู้ใช้คนนี้เคยดำเนินการแล้ว
+    // ประวัติอนุมัติ/ปฏิเสธใช้ query เฉพาะของแท็บนั้น ไม่ต้องโหลด scope ปัจจุบันซ้ำ
+    const scoped = status === 'APPROVED' || status === 'REJECTED'
+      ? null
+      : await getRoleScopedRequestIds(userId, roleName, createdAtFilter);
 
-    const [matchingRoles, currentUser] = await Promise.all([
-      prisma.role.findMany({
-        where: { roleName: { in: canonicalNames } },
-        select: { id: true },
-      }),
-      prisma.user.findUnique({
-        where: { id: userId },
-        select: { departmentId: true },
-      }),
-    ]);
-    const myRoleIds = matchingRoles.map((r) => r.id);
-
-    if (myRoleIds.length > 0) {
-      const myTransitions = await prisma.workflowTransition.findMany({
-        where: { requiredRoleId: { in: myRoleIds } },
-        select: { categoryId: true, currentStatusId: true, filterByDepartment: true },
-      });
-      const hasDeptFilter = myTransitions.some((t) => t.filterByDepartment);
-
-      if (status === 'PENDING' && myTransitions.length > 0) {
-        const orConditions: Record<string, unknown>[] = [];
-        for (const t of myTransitions) {
-          const condition: Record<string, unknown> = {
-            categoryId: t.categoryId,
-            currentStatusId: t.currentStatusId,
-          };
-          if (t.filterByDepartment && currentUser?.departmentId) {
-            condition.departmentId = currentUser.departmentId;
-          }
-          orConditions.push(condition);
-        }
-        const andConditions: Record<string, unknown>[] = [{ OR: orConditions }];
-        if (searchFilter) andConditions.push({ OR: searchFilter });
-        where.AND = andConditions;
-      } else if (status === 'APPROVED' || status === 'REJECTED') {
-        const actedIds = await requestIdsFromApprovalHistory(
-          userId,
-          status as 'APPROVED' | 'REJECTED',
-          300
-        );
-        if (actedIds.length > 0) {
-          where.id = { in: actedIds };
-          delete where.status;
-        } else {
-          where.id = { in: [] };
-        }
-        if (searchFilter) where.OR = searchFilter;
-      } else {
-        if (hasDeptFilter && currentUser?.departmentId) {
-          where.departmentId = currentUser.departmentId;
-        }
-        if (searchFilter) where.OR = searchFilter;
-      }
+    if (status === 'PENDING') {
+      where.id = { in: scoped?.activeIds ?? [] };
+    } else if (status === 'APPROVED' || status === 'REJECTED') {
+      const actedIds = await requestIdsFromApprovalHistory(
+        userId,
+        status as 'APPROVED' | 'REJECTED',
+        300,
+      );
+      where.id = { in: actedIds };
+      delete where.status;
+    } else if (status === 'CLOSED') {
+      where.id = { in: scoped?.historyIds ?? [] };
     } else {
-      where.requesterId = userId;
-      if (searchFilter) where.OR = searchFilter;
+      where.id = { in: scoped?.allIds ?? [] };
     }
+
+    if (searchFilter) where.OR = searchFilter;
   } else {
     where.requesterId = userId;
     if (searchFilter) where.OR = searchFilter;
@@ -219,6 +185,7 @@ export async function fetchRequestsList(
         problemDetail: r.problemDetail,
         systemType: r.systemType,
         isMoneyRelated: r.isMoneyRelated,
+        requiresAccountRecheck: r.requiresAccountRecheck,
         status: r.status,
         currentStatusId: (r as { currentStatusId?: number }).currentStatusId ?? 1,
         currentStatus: (r as {
