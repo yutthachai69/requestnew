@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1260" viewBox="0 0 2000 1260">
+  <defs>
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="140%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#2563eb"/>
+    </marker>
+    <style>
+      text { font-family: Tahoma, Arial, sans-serif; fill: #172033; }
+      .title { font-size: 46px; font-weight: 700; }
+      .subtitle { font-size: 23px; fill: #64748b; }
+      .role { font-size: 27px; font-weight: 700; }
+      .action { font-size: 21px; fill: #475569; }
+      .status { font-size: 19px; font-weight: 700; }
+      .step { font-size: 23px; font-weight: 700; fill: #ffffff; }
+      .arrow { stroke: #2563eb; stroke-width: 7; fill: none; marker-end: url(#arrowBlue); }
+    </style>
+  </defs>
+
+  <rect width="2000" height="1260" rx="34" fill="#f8fafc"/>
+  <text x="1000" y="62" text-anchor="middle" class="title">Flow การทำงานจริงตามฐานข้อมูลปัจจุบัน</text>
+  <text x="1000" y="102" text-anchor="middle" class="subtitle">อ้างอิง WorkflowTransition ที่ระบบใช้คำนวณปุ่มและสถานะถัดไป • ตรวจสอบ 3 กันยายน 2569</text>
+
+  <!-- Main path: row 1 -->
+  <path d="M430 235 H490" class="arrow"/>
+  <path d="M850 235 H910" class="arrow"/>
+  <path d="M1270 235 H1330" class="arrow"/>
+  <path d="M1540 325 V420" class="arrow"/>
+
+  <!-- Main path: row 2, right to left -->
+  <path d="M1330 510 H1260" class="arrow"/>
+  <path d="M860 510 H795" class="arrow"/>
+  <path d="M590 510 H540" class="arrow"/>
+
+  <!-- Step 1 -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="145" width="360" height="180" rx="24" fill="#ffffff" stroke="#bfdbfe" stroke-width="3"/>
+    <rect x="70" y="145" width="72" height="180" rx="24" fill="#2563eb"/>
+    <rect x="118" y="145" width="24" height="180" fill="#2563eb"/>
+    <text x="106" y="247" text-anchor="middle" class="step" style="font-size:18px">เริ่ม</text>
+    <text x="168" y="198" class="role">ผู้ขอ</text>
+    <text x="168" y="237" class="action">สร้างและส่งคำร้อง</text>
+    <rect x="168" y="262" width="218" height="39" rx="20" fill="#dbeafe"/>
+    <text x="277" y="288" text-anchor="middle" class="status" fill="#1d4ed8">PENDING</text>
+  </g>
+
+  <!-- Step 2 -->
+  <g filter="url(#shadow)">
+    <rect x="490" y="145" width="360" height="180" rx="24" fill="#ffffff" stroke="#fde68a" stroke-width="3"/>
+    <rect x="490" y="145" width="72" height="180" rx="24" fill="#f59e0b"/>
+    <rect x="538" y="145" width="24" height="180" fill="#f59e0b"/>
+    <text x="526" y="247" text-anchor="middle" class="step">1</text>
+    <text x="588" y="198" class="role">หัวหน้าแผนก</text>
+    <text x="588" y="237" class="action">อนุมัติภายในแผนก</text>
+    <rect x="588" y="262" width="218" height="39" rx="20" fill="#fef3c7"/>
+    <text x="697" y="288" text-anchor="middle" class="status" fill="#b45309">PENDING</text>
+  </g>
+
+  <!-- Step 3 -->
+  <g filter="url(#shadow)">
+    <rect x="910" y="145" width="360" height="180" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+    <rect x="910" y="145" width="72" height="180" rx="24" fill="#8b5cf6"/>
+    <rect x="958" y="145" width="24" height="180" fill="#8b5cf6"/>
+    <text x="946" y="247" text-anchor="middle" class="step">2</text>
+    <text x="1008" y="198" class="role">บัญชี รอบที่ 1</text>
+    <text x="1008" y="237" class="action">ตรวจสอบก่อนอนุมัติ</text>
+    <rect x="1008" y="262" width="218" height="39" rx="20" fill="#ede9fe"/>
+    <text x="1117" y="288" text-anchor="middle" class="status" fill="#6d28d9">WAITING_ACCOUNT_1</text>
+  </g>
+
+  <!-- Step 4 -->
+  <g filter="url(#shadow)">
+    <rect x="1330" y="145" width="420" height="180" rx="24" fill="#ffffff" stroke="#a5b4fc" stroke-width="3"/>
+    <rect x="1330" y="145" width="72" height="180" rx="24" fill="#4f46e5"/>
+    <rect x="1378" y="145" width="24" height="180" fill="#4f46e5"/>
+    <text x="1366" y="247" text-anchor="middle" class="step">3</text>
+    <text x="1428" y="198" class="role">ผู้อนุมัติสูงสุด</text>
+    <text x="1428" y="237" class="action">อนุมัติก่อนส่งให้ IT</text>
+    <rect x="1428" y="262" width="276" height="39" rx="20" fill="#e0e7ff"/>
+    <text x="1566" y="288" text-anchor="middle" class="status" fill="#4338ca">WAITING_FINAL_APP</text>
+  </g>
+
+  <!-- Step 5 -->
+  <g filter="url(#shadow)">
+    <rect x="1330" y="420" width="420" height="180" rx="24" fill="#ffffff" stroke="#f9a8d4" stroke-width="3"/>
+    <rect x="1330" y="420" width="72" height="180" rx="24" fill="#ec4899"/>
+    <rect x="1378" y="420" width="24" height="180" fill="#ec4899"/>
+    <text x="1366" y="522" text-anchor="middle" class="step">4</text>
+    <text x="1428" y="473" class="role">IT Operator</text>
+    <text x="1428" y="512" class="action">แก้ไขข้อมูลในระบบ</text>
+    <rect x="1428" y="537" width="276" height="39" rx="20" fill="#fce7f3"/>
+    <text x="1566" y="563" text-anchor="middle" class="status" fill="#be185d">IT_WORKING</text>
+  </g>
+
+  <!-- Step 6 -->
+  <g filter="url(#shadow)">
+    <rect x="860" y="420" width="400" height="180" rx="24" fill="#ffffff" stroke="#99f6e4" stroke-width="3"/>
+    <rect x="860" y="420" width="72" height="180" rx="24" fill="#14b8a6"/>
+    <rect x="908" y="420" width="24" height="180" fill="#14b8a6"/>
+    <text x="896" y="522" text-anchor="middle" class="step">5</text>
+    <text x="958" y="473" class="role">บัญชี รอบที่ 2</text>
+    <text x="958" y="512" class="action">ตรวจผลหลัง IT แก้ไข</text>
+    <rect x="958" y="537" width="258" height="39" rx="20" fill="#ccfbf1"/>
+    <text x="1087" y="563" text-anchor="middle" class="status" fill="#0f766e">WAITING_ACCOUNT_2</text>
+  </g>
+
+  <!-- CCS decision -->
+  <g filter="url(#shadow)">
+    <path d="M690 412 L795 510 L690 608 L585 510 Z" fill="#ffffff" stroke="#60a5fa" stroke-width="4"/>
+    <text x="690" y="491" text-anchor="middle" class="status" fill="#1d4ed8">ต้องปิด</text>
+    <text x="690" y="520" text-anchor="middle" class="role" style="font-size:24px">CCS ?</text>
+    <text x="690" y="550" text-anchor="middle" class="action" style="font-size:17px">ตามหมวดคำร้อง</text>
+  </g>
+
+  <!-- CCS required branch -->
+  <text x="560" y="397" text-anchor="middle" class="status" fill="#2563eb">ใช่ • 4 หมวด</text>
+  <g filter="url(#shadow)">
+    <rect x="210" y="420" width="330" height="180" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+    <rect x="210" y="420" width="72" height="180" rx="24" fill="#64748b"/>
+    <rect x="258" y="420" width="24" height="180" fill="#64748b"/>
+    <text x="246" y="522" text-anchor="middle" class="step">6</text>
+    <text x="308" y="473" class="role">IT Reviewer</text>
+    <text x="308" y="512" class="action">ตรวจรับและปิดงาน</text>
+    <rect x="308" y="537" width="198" height="39" rx="20" fill="#e2e8f0"/>
+    <text x="407" y="563" text-anchor="middle" class="status" fill="#475569">WAITING_IT_CLOSE</text>
+  </g>
+
+  <!-- Closing outcomes -->
+  <path d="M375 600 V690" class="arrow"/>
+  <path d="M690 608 V650 H1060 V690" class="arrow"/>
+  <text x="820" y="642" class="status" fill="#2563eb">ไม่ • คลังสินค้า</text>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="690" width="595" height="165" rx="25" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="3"/>
+    <circle cx="165" cy="772" r="45" fill="#10b981"/>
+    <path d="M140 773 L158 791 L191 752" stroke="#ffffff" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="235" y="746" class="role">ปิดงานหลัง IT Reviewer</text>
+    <text x="235" y="784" class="action">เก็บเกี่ยวฯ • ธุรการวัตถุดิบ</text>
+    <text x="235" y="817" class="action">ห้องชั่งอ้อย • ทั่วไป</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="760" y="690" width="600" height="165" rx="25" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="3"/>
+    <circle cx="845" cy="772" r="45" fill="#10b981"/>
+    <path d="M820 773 L838 791 L871 752" stroke="#ffffff" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="915" y="755" class="role">ปิดงานหลังบัญชีรอบที่ 2</text>
+    <text x="915" y="799" class="action">เฉพาะหมวดคลังสินค้า</text>
+    <rect x="915" y="816" width="170" height="29" rx="15" fill="#d1fae5"/>
+    <text x="1000" y="837" text-anchor="middle" class="status" fill="#047857">CLOSED</text>
+  </g>
+
+  <!-- Revision path, shown separately to avoid crossing the main flow -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="900" width="1840" height="155" rx="27" fill="#fff7ed" stroke="#fb923c" stroke-width="4"/>
+    <circle cx="180" cy="978" r="47" fill="#f97316"/>
+    <path d="M201 957 A30 30 0 1 0 206 988" stroke="#ffffff" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <path d="M204 950 L204 977 L178 965" fill="#ffffff"/>
+    <text x="260" y="946" class="role" fill="#c2410c">เส้นทางส่งกลับแก้ไข</text>
+    <text x="260" y="988" class="action">ผู้รับผิดชอบทุกสถานะใน Flow ปัจจุบันกด REJECT → สถานะ REVISION</text>
+    <text x="260" y="1026" class="status" fill="#ea580c">ผู้ขอแก้ไขและส่งใหม่ → กลับ PENDING → ล้าง ApprovalHistory เดิม → เริ่มที่หัวหน้าแผนกอีกครั้ง</text>
+  </g>
+
+  <!-- Verified configuration note -->
+  <rect x="80" y="1095" width="1840" height="125" rx="22" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+  <text x="1000" y="1138" text-anchor="middle" class="status" style="font-size:23px; fill:#1d4ed8">ผลตรวจฐานข้อมูล: ปัจจุบันทุกหมวดผ่านบัญชี 2 รอบ และยังไม่มี Workflow เฉพาะ Correction Type</text>
+  <text x="1000" y="1180" text-anchor="middle" class="subtitle" style="font-size:21px; fill:#1d4ed8">หากต้องการให้บางประเภทตรวจบัญชีเพียง 1 รอบ ต้องแก้ WorkflowTransition ของประเภทนั้นก่อน</text>
+</svg>

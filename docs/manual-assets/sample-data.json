@@ -1,0 +1,93 @@
+{
+  "createdAt": "2026-09-03T01:42:24.017Z",
+  "requests": [
+    {
+      "id": 60725,
+      "workOrderNo": "IT-F07-GN-69-715",
+      "targetStatus": "PENDING",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขเลขที่บิลน้ำมันจาก 1414141 เป็น 47474",
+      "values": [
+        "1414141",
+        "47474"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60726,
+      "workOrderNo": "IT-F07-GN-69-716",
+      "targetStatus": "PENDING",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขชื่อชาวไร่จาก นายสมชาย ใจดี เป็น นายสมหมาย ใจดี",
+      "values": [
+        "นายสมชาย ใจดี",
+        "นายสมหมาย ใจดี"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60727,
+      "workOrderNo": "IT-F07-GN-69-717",
+      "targetStatus": "WAITING_ACCOUNT_1",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขทะเบียนรถจาก 81-2345 เป็น 82-3456",
+      "values": [
+        "81-2345",
+        "82-3456"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60728,
+      "workOrderNo": "IT-F07-GN-69-718",
+      "targetStatus": "WAITING_FINAL_APP",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขโควตาจาก 120 ตัน เป็น 150 ตัน",
+      "values": [
+        "120 ตัน",
+        "150 ตัน"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60729,
+      "workOrderNo": "IT-F07-GN-69-719",
+      "targetStatus": "IT_WORKING",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขประเภทอ้อยจาก อ้อยสด เป็น อ้อยไฟไหม้",
+      "values": [
+        "อ้อยสด",
+        "อ้อยไฟไหม้"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60730,
+      "workOrderNo": "IT-F07-GN-69-720",
+      "targetStatus": "WAITING_ACCOUNT_2",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขข้อมูลพ่วงแม่และลูก เลขที่ 1001 และ 1002",
+      "values": [
+        "1001",
+        "1002"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60731,
+      "workOrderNo": "IT-F07-GN-69-721",
+      "targetStatus": "WAITING_IT_CLOSE",
+      "reason": "ตัวอย่างคู่มือ: แก้ไขใบปล่อยรถศูนย์ เลขที่ 2026-001",
+      "values": [
+        "2026-001",
+        "2026-002"
+      ],
+      "correctionType": ""
+    },
+    {
+      "id": 60732,
+      "workOrderNo": "IT-F07-GN-69-722",
+      "targetStatus": "CLOSED",
+      "reason": "ตัวอย่างคู่มือ: คำร้องที่ตรวจสอบและดำเนินการเสร็จสิ้นแล้ว",
+      "values": [
+        "ข้อมูลเดิม",
+        "ข้อมูลที่แก้ไขแล้ว"
+      ],
+      "correctionType": ""
+    }
+  ]
+}
