@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { signOut } from 'next-auth/react';
 import { getTabsForRole } from '@/lib/auth-constants';
+import { logoutToLogin } from '@/lib/client-logout';
 
 export default function DashboardHeader() {
   const { data: session } = useSession();
@@ -36,7 +36,7 @@ export default function DashboardHeader() {
           </Link>
         )}
         <button
-          onClick={() => signOut({ callbackUrl: '/' })}
+          onClick={() => { void logoutToLogin(); }}
           className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
         >
           ออกจากระบบ

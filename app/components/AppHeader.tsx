@@ -1,10 +1,11 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { useAppNotification } from '../context/AppNotificationContext';
 import { useSidebar } from '../context/SidebarContext';
+import { logoutToLogin } from '@/lib/client-logout';
 
 interface AppHeaderProps {
   onMenuClick?: () => void;
@@ -36,7 +37,7 @@ function AppHeader({ onMenuClick }: AppHeaderProps) {
 
   const handleConfirmLogout = () => {
     setConfirmOpen(false);
-    signOut({ callbackUrl: '/' });
+    void logoutToLogin();
   };
 
   const handleNotifClick = (notif: typeof notifications[0]) => {

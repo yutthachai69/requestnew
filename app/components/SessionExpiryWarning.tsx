@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useSession, signOut, getSession } from 'next-auth/react';
+import { useSession, getSession } from 'next-auth/react';
+import { logoutToLogin } from '@/lib/client-logout';
 
 const WARN_BEFORE_SECONDS = 5 * 60; // แจ้งเตือนก่อนหมด 5 นาที
 const CHECK_INTERVAL_MS = 30 * 1000; // เช็คทุก 30 วินาที
@@ -22,7 +23,7 @@ export default function SessionExpiryWarning() {
         const s = await getSession();
         if (!s) {
             // Session หมดแล้ว → ออกเลย
-            signOut({ callbackUrl: '/login' });
+            void logoutToLogin();
             return;
         }
 
@@ -32,7 +33,7 @@ export default function SessionExpiryWarning() {
         const remaining = Math.floor((expiresAt - now) / 1000); // วินาทีที่เหลือ
 
         if (remaining <= 0) {
-            signOut({ callbackUrl: '/login' });
+            void logoutToLogin();
         } else if (remaining <= WARN_BEFORE_SECONDS) {
             setSecondsLeft(remaining);
             setShowDialog(true);
@@ -53,13 +54,13 @@ export default function SessionExpiryWarning() {
     useEffect(() => {
         if (!showDialog) return;
         if (secondsLeft <= 0) {
-            signOut({ callbackUrl: '/login' });
+            void logoutToLogin();
             return;
         }
         const timer = setInterval(() => {
             setSecondsLeft((s) => {
                 if (s <= 1) {
-                    signOut({ callbackUrl: '/login' });
+                    void logoutToLogin();
                     return 0;
                 }
                 return s - 1;
@@ -80,7 +81,7 @@ export default function SessionExpiryWarning() {
     };
 
     const handleLogout = () => {
-        signOut({ callbackUrl: '/login' });
+        void logoutToLogin();
     };
 
     const formatTime = (secs: number) => {

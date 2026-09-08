@@ -111,10 +111,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="relative z-10 flex justify-between text-xs font-light opacity-60 w-full">
-          <span>v1.0.0</span>
-        </div>
-
         {/* Decoration SVG */}
         <div className="absolute top-0 right-0 bottom-0 w-32 h-full pointer-events-none translate-x-[2px]">
           <svg className="h-full w-full text-white" preserveAspectRatio="none" viewBox="0 0 100 800" fill="currentColor">

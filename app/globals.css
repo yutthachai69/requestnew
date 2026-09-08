@@ -44,6 +44,16 @@
 
 /* Custom Utilities layer if needed for Glassmorphism */
 @layer utilities {
+  /* Sidebar และแถบรายการยังเลื่อนได้ แต่ไม่แสดง scrollbar หนาแบบ default browser */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .glass {
     @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-lg;
   }

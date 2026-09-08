@@ -12,7 +12,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const contentPadding = isCollapsed ? 'md:pl-20' : 'md:pl-72';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen overflow-hidden bg-gray-50 print:h-auto print:overflow-visible">
       {/* Desktop Sidebar — hidden when printing */}
       <div className="hidden md:block print:hidden">
         <AppSidebar />
@@ -47,9 +47,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area */}
-      <div className={`flex flex-col min-h-screen pl-0 print:!pl-0 ${contentPadding}`}>
+      <div className={`flex h-screen flex-col pl-0 print:h-auto print:overflow-visible print:!pl-0 ${contentPadding}`}>
         <div className="print:hidden"><AppHeader /></div>
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto scrollbar-hide">{children}</main>
       </div>
 
       {/* Session Expiry Warning — ไม่แสดงสำหรับ Admin */}
