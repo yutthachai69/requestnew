@@ -27,6 +27,7 @@ model User {
   department              Department?              @relation(fields: [departmentId], references: [id])
   role                    Role                     @relation(fields: [roleId], references: [id])
   accessibleCategories    Category[]               @relation("CategoryToUser")
+  workflowVersionsCreated WorkflowVersion[]        @relation("WorkflowVersionCreator")
 }
 
 model Role {
@@ -76,6 +77,7 @@ model Category {
   id                      Int                      @id @default(autoincrement())
   name                    String                   @unique @db.NVarChar(255)
   requiresCCSClosing      Boolean                  @default(false)
+  isWorkflowTemplate      Boolean                  @default(false)
   docConfigs              DocConfig[]
   requests                ITRequestF07[]
   specialApproverMappings SpecialApproverMapping[]
@@ -84,6 +86,7 @@ model Category {
   correctionTypes         CorrectionType[]         @relation("CategoryToCorrectionType")
   locations               Location[]               @relation("CategoryToLocation")
   users                   User[]                   @relation("CategoryToUser")
+  workflowVersions        WorkflowVersion[]
 }
 
 model CorrectionReason {
@@ -102,10 +105,31 @@ model CorrectionType {
   requestCorrectionTypes RequestCorrectionType[]
   transitions            WorkflowTransition[]
   categories             Category[]              @relation("CategoryToCorrectionType")
+  workflowVersions       WorkflowVersion[]
+}
+
+model WorkflowVersion {
+  id               Int                  @id @default(autoincrement())
+  categoryId       Int
+  correctionTypeId Int?
+  versionNumber    Int
+  status           String               @default("DRAFT") @db.NVarChar(20)
+  label            String?              @db.NVarChar(255)
+  createdById      Int?
+  createdAt        DateTime             @default(now())
+  publishedAt      DateTime?
+  category         Category             @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  correctionType   CorrectionType?      @relation(fields: [correctionTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdBy        User?                @relation("WorkflowVersionCreator", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transitions      WorkflowTransition[]
+  requests         ITRequestF07[]
+
+  @@index([categoryId, correctionTypeId, status])
 }
 
 model WorkflowTransition {
-  id                 Int             @id @default(autoincrement())
+  id                 Int              @id @default(autoincrement())
+  workflowVersionId  Int?
   categoryId         Int
   correctionTypeId   Int?
   currentStatusId    Int
@@ -113,13 +137,15 @@ model WorkflowTransition {
   requiredRoleId     Int
   nextStatusId       Int
   stepSequence       Int
-  filterByDepartment Boolean         @default(false)
-  action             Action          @relation(fields: [actionId], references: [id])
-  category           Category        @relation(fields: [categoryId], references: [id])
-  correctionType     CorrectionType? @relation(fields: [correctionTypeId], references: [id])
-  currentStatus      Status          @relation("CurrentStatus", fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  nextStatus         Status          @relation("NextStatus", fields: [nextStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  requiredRole       Role            @relation(fields: [requiredRoleId], references: [id])
+  filterByDepartment Boolean          @default(false)
+  conditionKey       String           @default("ALWAYS") @db.NVarChar(64)
+  action             Action           @relation(fields: [actionId], references: [id])
+  category           Category         @relation(fields: [categoryId], references: [id])
+  workflowVersion    WorkflowVersion? @relation(fields: [workflowVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  correctionType     CorrectionType?  @relation(fields: [correctionTypeId], references: [id])
+  currentStatus      Status           @relation("CurrentStatus", fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  nextStatus         Status           @relation("NextStatus", fields: [nextStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  requiredRole       Role             @relation(fields: [requiredRoleId], references: [id])
 }
 
 model WorkflowStep {
@@ -163,35 +189,39 @@ model EmailTemplate {
 }
 
 model ITRequestF07 {
-  id                  Int                     @id @default(autoincrement())
-  workOrderNo         String?                 @db.NVarChar(255)
-  thaiName            String
-  phone               String?
-  problemDetail       String                  @db.NVarChar(Max)
-  systemType          String
-  isMoneyRelated      Boolean                 @default(false)
-  attachmentPath      String?
-  status              String?                 @default("PENDING")
-  currentStatusId     Int                     @default(1)
-  currentApprovalStep Int                     @default(1)
-  approvalToken       String?                 @db.NVarChar(255)
-  reasonText          String?                 @db.NVarChar(Max)
-  problemReason       String?                 @db.NVarChar(Max)
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
-  requesterId         Int
-  departmentId        Int
-  locationId          Int
-  categoryId          Int
-  approvalHistory     ApprovalHistory[]
-  auditLogs           AuditLog[]
-  category            Category                @relation(fields: [categoryId], references: [id])
-  currentStatus       Status                  @relation(fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  department          Department              @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  location            Location                @relation(fields: [locationId], references: [id])
-  requester           User                    @relation("Requester", fields: [requesterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  notifications       Notification[]
-  correctionTypes     RequestCorrectionType[]
+  id                     Int                     @id @default(autoincrement())
+  workOrderNo            String?                 @db.NVarChar(255)
+  thaiName               String
+  phone                  String?
+  problemDetail          String                  @db.NVarChar(Max)
+  systemType             String
+  isMoneyRelated         Boolean                 @default(false)
+  requiresAccountRecheck Boolean                 @default(false)
+  workflowVersionId      Int?
+  attachmentPath         String?
+  status                 String?                 @default("PENDING")
+  currentStatusId        Int                     @default(1)
+  currentApprovalStep    Int                     @default(1)
+  approvalRound          Int                     @default(1)
+  approvalToken          String?                 @db.NVarChar(255)
+  reasonText             String?                 @db.NVarChar(Max)
+  problemReason          String?                 @db.NVarChar(Max)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  requesterId            Int
+  departmentId           Int
+  locationId             Int
+  categoryId             Int
+  workflowVersion        WorkflowVersion?        @relation(fields: [workflowVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  approvalHistory        ApprovalHistory[]
+  auditLogs              AuditLog[]
+  category               Category                @relation(fields: [categoryId], references: [id])
+  currentStatus          Status                  @relation(fields: [currentStatusId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  department             Department              @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  location               Location                @relation(fields: [locationId], references: [id])
+  requester              User                    @relation("Requester", fields: [requesterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  notifications          Notification[]
+  correctionTypes        RequestCorrectionType[]
 
   @@index([categoryId])
   @@index([createdAt])
@@ -231,13 +261,15 @@ model ApprovalHistory {
   requestId         Int
   approverId        Int
   approvalLevel     Decimal      @default(0)
+  approvalRound     Int          @default(1)
   actionType        String
   comment           String?      @db.NVarChar(Max)
   approvalTimestamp DateTime     @default(now())
   approver          User         @relation(fields: [approverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   request           ITRequestF07 @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  @@index([requestId, approvalLevel])
+    @@index([requestId, approvalLevel])
+    @@index([requestId, approvalRound, approvalLevel], map: "ApprovalHistory_request_round_level_idx")
   @@index([approverId, actionType])
 }
 

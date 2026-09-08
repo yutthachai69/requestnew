@@ -75,6 +75,7 @@ CREATE TABLE [dbo].[Category] (
     [id] INT NOT NULL IDENTITY(1,1),
     [name] NVARCHAR(255) NOT NULL,
     [requiresCCSClosing] BIT NOT NULL CONSTRAINT [Category_requiresCCSClosing_df] DEFAULT 0,
+    [isWorkflowTemplate] BIT NOT NULL CONSTRAINT [Category_isWorkflowTemplate_df] DEFAULT 0,
     CONSTRAINT [Category_pkey] PRIMARY KEY CLUSTERED ([id]),
     CONSTRAINT [Category_name_key] UNIQUE NONCLUSTERED ([name])
 );
@@ -100,8 +101,23 @@ CREATE TABLE [dbo].[CorrectionType] (
 );
 
 -- CreateTable
+CREATE TABLE [dbo].[WorkflowVersion] (
+    [id] INT NOT NULL IDENTITY(1,1),
+    [categoryId] INT NOT NULL,
+    [correctionTypeId] INT,
+    [versionNumber] INT NOT NULL,
+    [status] NVARCHAR(20) NOT NULL CONSTRAINT [WorkflowVersion_status_df] DEFAULT 'DRAFT',
+    [label] NVARCHAR(255),
+    [createdById] INT,
+    [createdAt] DATETIME2 NOT NULL CONSTRAINT [WorkflowVersion_createdAt_df] DEFAULT CURRENT_TIMESTAMP,
+    [publishedAt] DATETIME2,
+    CONSTRAINT [WorkflowVersion_pkey] PRIMARY KEY CLUSTERED ([id])
+);
+
+-- CreateTable
 CREATE TABLE [dbo].[WorkflowTransition] (
     [id] INT NOT NULL IDENTITY(1,1),
+    [workflowVersionId] INT,
     [categoryId] INT NOT NULL,
     [correctionTypeId] INT,
     [currentStatusId] INT NOT NULL,
@@ -110,6 +126,7 @@ CREATE TABLE [dbo].[WorkflowTransition] (
     [nextStatusId] INT NOT NULL,
     [stepSequence] INT NOT NULL,
     [filterByDepartment] BIT NOT NULL CONSTRAINT [WorkflowTransition_filterByDepartment_df] DEFAULT 0,
+    [conditionKey] NVARCHAR(64) NOT NULL CONSTRAINT [WorkflowTransition_conditionKey_df] DEFAULT 'ALWAYS',
     CONSTRAINT [WorkflowTransition_pkey] PRIMARY KEY CLUSTERED ([id])
 );
 
@@ -165,10 +182,12 @@ CREATE TABLE [dbo].[ITRequestF07] (
     [problemDetail] NVARCHAR(max) NOT NULL,
     [systemType] NVARCHAR(1000) NOT NULL,
     [isMoneyRelated] BIT NOT NULL CONSTRAINT [ITRequestF07_isMoneyRelated_df] DEFAULT 0,
+    [requiresAccountRecheck] BIT NOT NULL CONSTRAINT [ITRequestF07_requiresAccountRecheck_df] DEFAULT 0,
     [attachmentPath] NVARCHAR(1000),
     [status] NVARCHAR(1000) CONSTRAINT [ITRequestF07_status_df] DEFAULT 'PENDING',
     [currentStatusId] INT NOT NULL CONSTRAINT [ITRequestF07_currentStatusId_df] DEFAULT 1,
     [currentApprovalStep] INT NOT NULL CONSTRAINT [ITRequestF07_currentApprovalStep_df] DEFAULT 1,
+    [approvalRound] INT NOT NULL CONSTRAINT [ITRequestF07_approvalRound_df] DEFAULT 1,
     [approvalToken] NVARCHAR(255),
     [reasonText] NVARCHAR(max),
     [problemReason] NVARCHAR(max),
@@ -178,6 +197,7 @@ CREATE TABLE [dbo].[ITRequestF07] (
     [departmentId] INT NOT NULL,
     [locationId] INT NOT NULL,
     [categoryId] INT NOT NULL,
+    [workflowVersionId] INT,
     CONSTRAINT [ITRequestF07_pkey] PRIMARY KEY CLUSTERED ([id])
 );
 
@@ -206,6 +226,7 @@ CREATE TABLE [dbo].[ApprovalHistory] (
     [requestId] INT NOT NULL,
     [approverId] INT NOT NULL,
     [approvalLevel] DECIMAL(32,16) NOT NULL CONSTRAINT [ApprovalHistory_approvalLevel_df] DEFAULT 0,
+    [approvalRound] INT NOT NULL CONSTRAINT [ApprovalHistory_approvalRound_df] DEFAULT 1,
     [actionType] NVARCHAR(1000) NOT NULL,
     [comment] NVARCHAR(max),
     [approvalTimestamp] DATETIME2 NOT NULL CONSTRAINT [ApprovalHistory_approvalTimestamp_df] DEFAULT CURRENT_TIMESTAMP,
@@ -245,6 +266,15 @@ CREATE TABLE [dbo].[_CategoryToUser] (
 );
 
 -- CreateIndex
+CREATE NONCLUSTERED INDEX [WorkflowVersion_scope_status_idx] ON [dbo].[WorkflowVersion]([categoryId], [correctionTypeId], [status]);
+
+-- CreateIndex
+CREATE NONCLUSTERED INDEX [WorkflowTransition_workflowVersion_idx] ON [dbo].[WorkflowTransition]([workflowVersionId], [currentStatusId], [conditionKey]);
+
+-- CreateIndex
+CREATE NONCLUSTERED INDEX [ITRequestF07_workflowVersion_idx] ON [dbo].[ITRequestF07]([workflowVersionId]);
+
+-- CreateIndex
 CREATE NONCLUSTERED INDEX [ITRequestF07_categoryId_idx] ON [dbo].[ITRequestF07]([categoryId]);
 
 -- CreateIndex
@@ -275,6 +305,9 @@ CREATE NONCLUSTERED INDEX [AuditLog_userId_idx] ON [dbo].[AuditLog]([userId]);
 CREATE NONCLUSTERED INDEX [ApprovalHistory_requestId_approvalLevel_idx] ON [dbo].[ApprovalHistory]([requestId], [approvalLevel]);
 
 -- CreateIndex
+CREATE NONCLUSTERED INDEX [ApprovalHistory_request_round_level_idx] ON [dbo].[ApprovalHistory]([requestId], [approvalRound], [approvalLevel]);
+
+-- CreateIndex
 CREATE NONCLUSTERED INDEX [ApprovalHistory_approverId_actionType_idx] ON [dbo].[ApprovalHistory]([approverId], [actionType]);
 
 -- CreateIndex
@@ -288,6 +321,18 @@ CREATE NONCLUSTERED INDEX [_CategoryToLocation_B_index] ON [dbo].[_CategoryToLoc
 
 -- CreateIndex
 CREATE NONCLUSTERED INDEX [_CategoryToUser_B_index] ON [dbo].[_CategoryToUser]([B]);
+
+-- AddForeignKey
+ALTER TABLE [dbo].[WorkflowVersion] ADD CONSTRAINT [WorkflowVersion_categoryId_fkey] FOREIGN KEY ([categoryId]) REFERENCES [dbo].[Category]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE [dbo].[WorkflowVersion] ADD CONSTRAINT [WorkflowVersion_correctionTypeId_fkey] FOREIGN KEY ([correctionTypeId]) REFERENCES [dbo].[CorrectionType]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE [dbo].[WorkflowVersion] ADD CONSTRAINT [WorkflowVersion_createdById_fkey] FOREIGN KEY ([createdById]) REFERENCES [dbo].[User]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE [dbo].[WorkflowTransition] ADD CONSTRAINT [WorkflowTransition_workflowVersionId_fkey] FOREIGN KEY ([workflowVersionId]) REFERENCES [dbo].[WorkflowVersion]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE [dbo].[User] ADD CONSTRAINT [User_departmentId_fkey] FOREIGN KEY ([departmentId]) REFERENCES [dbo].[Department]([id]) ON DELETE SET NULL ON UPDATE CASCADE;
@@ -327,6 +372,9 @@ ALTER TABLE [dbo].[DocConfig] ADD CONSTRAINT [DocConfig_categoryId_fkey] FOREIGN
 
 -- AddForeignKey
 ALTER TABLE [dbo].[ITRequestF07] ADD CONSTRAINT [ITRequestF07_categoryId_fkey] FOREIGN KEY ([categoryId]) REFERENCES [dbo].[Category]([id]) ON DELETE NO ACTION ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE [dbo].[ITRequestF07] ADD CONSTRAINT [ITRequestF07_workflowVersionId_fkey] FOREIGN KEY ([workflowVersionId]) REFERENCES [dbo].[WorkflowVersion]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE [dbo].[ITRequestF07] ADD CONSTRAINT [ITRequestF07_currentStatusId_fkey] FOREIGN KEY ([currentStatusId]) REFERENCES [dbo].[Status]([id]) ON DELETE NO ACTION ON UPDATE NO ACTION;
