@@ -170,18 +170,18 @@ async function main() {
   // "ทั่วไป" -> General
 
   const categories = [
-    { name: 'เก็บเกี่ยวและขนส่ง', requiresCCSClosing: true }, // Renamed from ฝ่ายไร่/ศูนย์ขนถ่าย
-    { name: 'ธุรการวัตถุดิบ', requiresCCSClosing: true },     // New Split
-    { name: 'ห้องชั่งอ้อย', requiresCCSClosing: true },
-    { name: 'คลังสินค้า', requiresCCSClosing: false },
-    { name: 'ทั่วไป', requiresCCSClosing: true },
+    { name: 'เก็บเกี่ยวและขนส่ง', requiresCCSClosing: true, isWorkflowTemplate: false }, // Renamed from ฝ่ายไร่/ศูนย์ขนถ่าย
+    { name: 'ธุรการวัตถุดิบ', requiresCCSClosing: true, isWorkflowTemplate: false },     // New Split
+    { name: 'ห้องชั่งอ้อย', requiresCCSClosing: true, isWorkflowTemplate: false },
+    { name: 'คลังสินค้า', requiresCCSClosing: true, isWorkflowTemplate: false },
+    { name: 'ทั่วไป', requiresCCSClosing: true, isWorkflowTemplate: true },
   ];
 
   for (const c of categories) {
     await prisma.category.upsert({
       where: { name: c.name },
-      update: { requiresCCSClosing: c.requiresCCSClosing },
-      create: { name: c.name, requiresCCSClosing: c.requiresCCSClosing },
+      update: { requiresCCSClosing: c.requiresCCSClosing, isWorkflowTemplate: c.isWorkflowTemplate ?? false },
+      create: { name: c.name, requiresCCSClosing: c.requiresCCSClosing, isWorkflowTemplate: c.isWorkflowTemplate ?? false },
     });
   }
 
@@ -202,24 +202,15 @@ async function main() {
     // 3. WAITING_FINAL_APP -> IT_WORKING (Final Approve)
     await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_FINAL_APP'), actionId: 1, requiredRoleId: ridFinal, nextStatusId: sid('IT_WORKING'), stepSequence: 3, filterByDepartment: false } });
 
-    // 4. IT_WORKING -> WAITING_ACCOUNT_2 (IT Process)
+    // 4. IT_WORKING -> WAITING_ACCOUNT_2 (default route; approvalService
+    //    skips to WAITING_IT_CLOSE when the request did not ask for recheck)
     await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_ACCOUNT_2'), stepSequence: 4, filterByDepartment: false } });
 
-    if (cat.requiresCCSClosing) {
-      // 6 Steps: CCS Closing Required
+    // 5. Optional accountant recheck always hands the request to IT Reviewer.
+    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 5, filterByDepartment: false } });
 
-      // 5. WAITING_ACCOUNT_2 -> WAITING_IT_CLOSE (Accountant Check)
-      await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 5, filterByDepartment: false } });
-
-      // 6. WAITING_IT_CLOSE -> CLOSED (IT Reviewer Close)
-      await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 6, filterByDepartment: false } });
-
-    } else {
-      // 5 Steps: Skip CCS Closing
-
-      // 5. WAITING_ACCOUNT_2 -> CLOSED (Accountant Check -> Finish)
-      await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('CLOSED'), stepSequence: 5, filterByDepartment: false } });
-    }
+    // 6. Required by the unchecked path: IT Operator -> IT Reviewer -> CLOSED.
+    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 6, filterByDepartment: false } });
 
     // Rejection Paths (Available at all steps)
     const rejectTargets = [
@@ -228,13 +219,10 @@ async function main() {
       { status: 'WAITING_FINAL_APP', role: ridFinal },
       { status: 'IT_WORKING', role: ridIT },
       { status: 'WAITING_ACCOUNT_2', role: ridAccountant },
-      { status: 'WAITING_IT_CLOSE', role: ridITReviewer }, // Only if exists
+      { status: 'WAITING_IT_CLOSE', role: ridITReviewer },
     ];
 
     for (const t of rejectTargets) {
-      // Skip if status doesn't exist in flow (e.g. IT_CLOSE for 5-step)
-      if (t.status === 'WAITING_IT_CLOSE' && !cat.requiresCCSClosing) continue;
-
       await prisma.workflowTransition.create({
         data: {
           categoryId: cat.id,

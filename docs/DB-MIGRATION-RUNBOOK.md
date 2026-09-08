@@ -6,6 +6,13 @@ The application datasource is SQL Server, but the original migration was generat
 
 The dev database currently has the `DocConfig_categoryId_year_key` unique index applied by the idempotent script in `prisma/sqlserver/`.
 
+The approval-round change is provided as the idempotent script
+`prisma/migrations/add_approval_round.sql`. Apply it in staging/production through
+SSMS (after backup and the preflight below), then run `npx prisma generate` for
+the application build. It adds `approvalRound = 1` to existing requests and
+history rows and creates an index for current-round checks; it does not delete
+historical approval data.
+
 ## Known local blocker
 
 The application connects through `@prisma/adapter-mssql`, but Prisma's native migration engine on this Windows machine fails during the SQL Server TLS handshake with `P1011` (`No credentials are available in the security package`). This occurs with both SQL Authentication and Windows Authentication, and with `encrypt=true` or `encrypt=false`; `encrypt=false` still protects the login exchange according to Prisma's SQL Server connection behavior.

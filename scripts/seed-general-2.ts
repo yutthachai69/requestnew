@@ -10,12 +10,17 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
     console.log('Seeding "ทั่วไป 2" Workflow...');
 
-    // 1. Get All Categories
-    const categories = await prisma.category.findMany();
+    // 1. The central workflow belongs to the system-template category only.
+    // It must not be attached to every user-facing category.
+    const templateCategory = await prisma.category.findFirst({
+        where: { name: 'ทั่วไป', isWorkflowTemplate: true },
+    });
 
-    if (categories.length === 0) {
-        throw new Error('No categories found to seed.');
+    if (!templateCategory) {
+        throw new Error('Workflow template category "ทั่วไป" was not found. Run the template migration first.');
     }
+
+    const categories = [templateCategory];
 
     // Helper to get Role ID
     const getRoleId = async (name: string) => {
@@ -35,7 +40,7 @@ async function main() {
     );
     const sid = (code: string) => statusIds[code] ?? 0;
 
-    // Create or update the shared 'ทั่วไป 2' CorrectionType once
+    // Create or update the central-template CorrectionType once.
     let correctionType = await prisma.correctionType.findUnique({
         where: { name: 'ทั่วไป 2' }
     });
@@ -52,12 +57,12 @@ async function main() {
         });
         console.log(`Created Shared CorrectionType: ${correctionType.name} (ID: ${correctionType.id})`);
     } else {
-        // Ensure it's connected to all categories
+        // Remove accidental links to user-facing categories from older runs.
         await prisma.correctionType.update({
             where: { id: correctionType.id },
             data: {
                 categories: {
-                    connect: categories.map(c => ({ id: c.id }))
+                    set: categories.map(c => ({ id: c.id }))
                 }
             }
         });
@@ -73,7 +78,8 @@ async function main() {
             }
         });
 
-        // Create Custom Workflow Transitions for "ทั่วไป 2" (Skipping Accountant check after IT)
+        // Create Custom Workflow Transitions for "ทั่วไป 2". The per-request
+        // requiresAccountRecheck flag decides whether approvalService skips step 5.
 
         // 1. PENDING -> WAITING_ACCOUNT_1 (Head Approve)
         await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('PENDING'), actionId: 1, requiredRoleId: ridHead, nextStatusId: sid('WAITING_ACCOUNT_1'), stepSequence: 1, filterByDepartment: true } });
@@ -84,11 +90,14 @@ async function main() {
         // 3. WAITING_FINAL_APP -> IT_WORKING (Final Approve)
         await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('WAITING_FINAL_APP'), actionId: 1, requiredRoleId: ridFinal, nextStatusId: sid('IT_WORKING'), stepSequence: 3, filterByDepartment: false } });
 
-        // 4. IT_WORKING -> WAITING_IT_CLOSE (IT Process -> Skip Accountant, go straight to IT Reviewer)
-        await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 4, filterByDepartment: false } });
+        // 4. IT_WORKING -> WAITING_ACCOUNT_2 (default; service may skip per request)
+        await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_ACCOUNT_2'), stepSequence: 4, filterByDepartment: false } });
 
-        // 5. WAITING_IT_CLOSE -> CLOSED (IT Reviewer Close)
-        await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 5, filterByDepartment: false } });
+        // 5. Optional accountant recheck always hands the request to IT Reviewer.
+        await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 5, filterByDepartment: false } });
+
+        // 6. Required by the unchecked path: IT Operator -> IT Reviewer -> CLOSED.
+        await prisma.workflowTransition.create({ data: { categoryId: cat.id, correctionTypeId: correctionType.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 6, filterByDepartment: false } });
 
         // Rejection Paths
         const rejectTargets = [
@@ -96,6 +105,7 @@ async function main() {
             { status: 'WAITING_ACCOUNT_1', role: ridAccountant },
             { status: 'WAITING_FINAL_APP', role: ridFinal },
             { status: 'IT_WORKING', role: ridIT },
+            { status: 'WAITING_ACCOUNT_2', role: ridAccountant },
             { status: 'WAITING_IT_CLOSE', role: ridITReviewer },
         ];
 
