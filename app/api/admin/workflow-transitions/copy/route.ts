@@ -2,6 +2,7 @@ import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleApiError } from '@/lib/api-error';
+import { WORKFLOW_VERSION_STATUS } from '@/lib/workflow-versioning';
 
 /** POST /api/admin/workflow-transitions/copy — คัดลอก Workflow จากหมวดหมู่ (และประเภทการแก้ไข) หนึ่งไปอีกหมวดหมู่ */
 export async function POST(request: NextRequest) {
@@ -27,16 +28,15 @@ export async function POST(request: NextRequest) {
     if (sourceCategoryId === targetCategoryId && sourceCorrectionTypeId === targetCorrectionTypeId)
       return NextResponse.json({ message: 'ต้นทางและปลายทางต้องต่างกัน' }, { status: 400 });
 
-    const sourceList = await prisma.workflowTransition.findMany({
-      where: {
-        categoryId: sourceCategoryId,
-        correctionTypeId: sourceCorrectionTypeId,
-      },
-      orderBy: [{ stepSequence: 'asc' }, { id: 'asc' }],
-    });
+    const sourceVersion = await prisma.workflowVersion.findFirst({ where: { categoryId: sourceCategoryId, correctionTypeId: sourceCorrectionTypeId, status: WORKFLOW_VERSION_STATUS.PUBLISHED }, orderBy: { versionNumber: 'desc' }, include: { transitions: true } });
+    if (!sourceVersion) return NextResponse.json({ message: 'ไม่พบ Workflow ต้นทาง' }, { status: 404 });
+    const latestVersion = await prisma.workflowVersion.findFirst({ where: { categoryId: targetCategoryId, correctionTypeId: targetCorrectionTypeId }, orderBy: { versionNumber: 'desc' }, select: { versionNumber: true } });
+    const targetVersion = await prisma.workflowVersion.create({ data: { categoryId: targetCategoryId, correctionTypeId: targetCorrectionTypeId, versionNumber: (latestVersion?.versionNumber || 0) + 1, status: WORKFLOW_VERSION_STATUS.DRAFT, label: `คัดลอกจาก v${sourceVersion.versionNumber}`, createdById: auth.id } });
+    const sourceList = sourceVersion.transitions;
 
     const created = await prisma.workflowTransition.createMany({
       data: sourceList.map((t) => ({
+        workflowVersionId: targetVersion.id,
         categoryId: targetCategoryId,
         correctionTypeId: targetCorrectionTypeId,
         currentStatusId: t.currentStatusId,
@@ -45,12 +45,14 @@ export async function POST(request: NextRequest) {
         nextStatusId: t.nextStatusId,
         stepSequence: t.stepSequence,
         filterByDepartment: t.filterByDepartment,
+        conditionKey: t.conditionKey,
       })),
     });
 
     return NextResponse.json({
       message: `คัดลอก Workflow สำเร็จ (${created.count} รายการ)`,
       count: created.count,
+      versionId: targetVersion.id,
     });
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';

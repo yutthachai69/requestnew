@@ -1,6 +1,7 @@
 // lib/workflow.ts
 import { prisma } from './prisma';
 import { getUserRoleNamesForWorkflowRole } from './auth-constants';
+import { conditionMatches, resolveWorkflowVersionId } from './workflow-versioning';
 
 // --- State Machine (WorkflowTransition) ---
 
@@ -10,11 +11,13 @@ export type TransitionWithRelations = Awaited<ReturnType<typeof findTransitionsB
 export async function findTransitionsByStatus(
   categoryId: number,
   currentStatusId: number,
-  correctionTypeId?: number | null
+  correctionTypeId?: number | null,
+  workflowVersionId?: number | null,
+  requiresAccountRecheck?: boolean,
 ) {
   const list = await prisma.workflowTransition.findMany({
     where: {
-      categoryId,
+      ...(workflowVersionId != null ? { workflowVersionId } : { categoryId }),
       currentStatusId,
       correctionTypeId: correctionTypeId ?? null,
     },
@@ -25,7 +28,7 @@ export async function findTransitionsByStatus(
       nextStatus: { select: { id: true, code: true, displayName: true } },
     },
   });
-  return list;
+  return list.filter((t) => conditionMatches(t.conditionKey, requiresAccountRecheck));
 }
 
 /** ดึง transitions ที่ใช้ได้กับคำร้อง (สถานะปัจจุบัน + category; correctionType ใช้จากคำร้องถ้ามี) */
@@ -33,19 +36,23 @@ export async function findPossibleTransitions(request: {
   categoryId: number;
   currentStatusId: number;
   correctionTypeIds?: number[];
+  workflowVersionId?: number | null;
+  requiresAccountRecheck?: boolean;
 }) {
-  const { categoryId, currentStatusId, correctionTypeIds } = request;
+  const { categoryId, currentStatusId, correctionTypeIds, requiresAccountRecheck } = request;
+  let workflowVersionId = request.workflowVersionId;
+  if (workflowVersionId == null) workflowVersionId = await resolveWorkflowVersionId(prisma, categoryId, correctionTypeIds);
 
   // 1. ถ้ามี Correction Type ให้หา Transition ที่เฉพาะเจาะจงกับ Type นั้นก่อน (เรียง Priority ตามที่ database อาจจะมี แต่ที่นี่เราเช็คทีละตัว)
   if (correctionTypeIds && correctionTypeIds.length > 0) {
     for (const typeId of correctionTypeIds) {
-      const transitions = await findTransitionsByStatus(categoryId, currentStatusId, typeId);
+      const transitions = await findTransitionsByStatus(categoryId, currentStatusId, typeId, workflowVersionId, requiresAccountRecheck);
       if (transitions.length > 0) return transitions;
     }
   }
 
   // 2. ถ้าไม่เจอ (หรือไม่มี Correction Type) ให้หา Transition ทั่วไป (Generic Rules)
-  return findTransitionsByStatus(categoryId, currentStatusId, null);
+  return findTransitionsByStatus(categoryId, currentStatusId, null, workflowVersionId, requiresAccountRecheck);
 }
 
 /** ตรวจสอบว่าในขั้นตอนนี้ (stepSequence) ได้รับการอนุมัติครบทุกคนหรือยัง (สำหรับ Parallel Approval) */
@@ -74,7 +81,9 @@ export async function checkParallelApprovalsCompleted(
   let possibleTransitions = await findPossibleTransitions({
     categoryId,
     currentStatusId,
-    correctionTypeIds
+    correctionTypeIds,
+    workflowVersionId: request.workflowVersionId,
+    requiresAccountRecheck: request.requiresAccountRecheck,
   });
 
   // กรองเอาเฉพาะ transition ที่อยู่ใน stepSequence นี้ และไม่ใช่การ REJECT (การปฏิเสธมักจะทำได้เลย ไม่ต้องรอครบ)
@@ -90,6 +99,7 @@ export async function checkParallelApprovalsCompleted(
   const approvalsInStep = await db.approvalHistory.findMany({
     where: {
       requestId,
+      approvalRound: request.approvalRound,
       approvalLevel: currentStepSequence, // Prisma Decimal mapped to number/string based on config, assume compatibility or cast
       actionType: { in: ['APPROVE', 'APPROVED', 'Approve', 'IT_PROCESS', 'CONFIRM_COMPLETE'] } // ปรับตาม Action Name ที่บันทึกจริง
     },
@@ -142,11 +152,13 @@ export async function getApproversForTransition(
 /** หาผู้อนุมัติคนแรกสำหรับสถานะเริ่มต้น (PENDING) — ใช้ transition แรกที่ออกจาก initial status */
 export async function getFirstApproverForCategoryFromTransitions(
   categoryId: number,
-  departmentId?: number
+  departmentId?: number,
+  workflowVersionId?: number | null,
+  requiresAccountRecheck?: boolean,
 ): Promise<{ id: number; username: string; email: string; fullName: string } | null> {
   const initial = await prisma.status.findFirst({ where: { isInitialState: true }, select: { id: true } });
   if (!initial) return null;
-  const transitions = await findTransitionsByStatus(categoryId, initial.id, null);
+  const transitions = await findTransitionsByStatus(categoryId, initial.id, null, workflowVersionId, requiresAccountRecheck);
   const first = transitions.find((t) => t.action.actionName === 'APPROVE') ?? transitions[0];
   if (!first) return null;
   const approvers = await getApproversForTransition(first, departmentId);
@@ -159,7 +171,9 @@ export async function getNextApproversForStatus(
   currentStatusId: number,
   departmentId?: number,
   correctionTypeId?: number | null,
-  correctionTypeIds?: number[]
+  correctionTypeIds?: number[],
+  workflowVersionId?: number | null,
+  requiresAccountRecheck?: boolean,
 ): Promise<{ id: number; username: string; email: string; fullName: string }[]> {
   const ids =
     correctionTypeIds?.length
@@ -172,6 +186,8 @@ export async function getNextApproversForStatus(
     categoryId,
     currentStatusId,
     correctionTypeIds: ids.length > 0 ? ids : undefined,
+    workflowVersionId,
+    requiresAccountRecheck,
   });
 
   const actionable = transitions.filter((t) => t.action.actionName !== 'REJECT');

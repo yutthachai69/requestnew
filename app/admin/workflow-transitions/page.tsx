@@ -8,7 +8,7 @@ import LoadingSpinner from '@/app/components/LoadingSpinner';
 type Status = { id: number; code: string; displayName: string };
 type Action = { id: number; actionName: string; displayName: string };
 type Role = { RoleID: number; RoleName: string };
-type Category = { CategoryID: number; CategoryName: string };
+type Category = { CategoryID: number; CategoryName: string; IsWorkflowTemplate?: boolean };
 type CorrectionType = { CorrectionTypeID: number; Name: string };
 
 type Transition = {
@@ -26,7 +26,9 @@ type Transition = {
   nextStatus: Status;
   stepSequence: number;
   filterByDepartment: boolean;
+  conditionKey?: string;
 };
+type WorkflowVersion = { id: number; versionNumber: number; status: string; label?: string | null; _count?: { requests: number; transitions: number } };
 
 export default function AdminWorkflowTransitionsPage() {
   const { showNotification } = useNotification();
@@ -35,6 +37,10 @@ export default function AdminWorkflowTransitionsPage() {
   const [actions, setActions] = useState<Action[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [transitions, setTransitions] = useState<Transition[]>([]);
+  const [versions, setVersions] = useState<WorkflowVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<number | ''>('');
+  const [versionBusy, setVersionBusy] = useState(false);
+  const [simulation, setSimulation] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | ''>('');
   const [selectedCorrectionTypeId, setSelectedCorrectionTypeId] = useState<number | ''>('');
   const [correctionTypes, setCorrectionTypes] = useState<CorrectionType[]>([]);
@@ -57,6 +63,7 @@ export default function AdminWorkflowTransitionsPage() {
     nextStatusId: '' as number | '',
     stepSequence: 1,
     filterByDepartment: false,
+    conditionKey: 'ALWAYS',
   });
 
   const fetchMaster = useCallback(async () => {
@@ -115,6 +122,7 @@ export default function AdminWorkflowTransitionsPage() {
     try {
       const q = new URLSearchParams({ categoryId: String(selectedCategoryId) });
       if (selectedCorrectionTypeId !== '') q.set('correctionTypeId', String(selectedCorrectionTypeId));
+      if (selectedVersionId !== '') q.set('workflowVersionId', String(selectedVersionId));
       const res = await fetch(`/api/admin/workflow-transitions?${q}`);
       if (!res.ok) throw new Error('โหลดไม่สำเร็จ');
       const data = await res.json();
@@ -125,7 +133,18 @@ export default function AdminWorkflowTransitionsPage() {
     } finally {
       setListLoading(false);
     }
-  }, [selectedCategoryId, selectedCorrectionTypeId, showNotification]);
+  }, [selectedCategoryId, selectedCorrectionTypeId, selectedVersionId, showNotification]);
+
+  const fetchVersions = useCallback(async () => {
+    if (selectedCategoryId === '') { setVersions([]); setSelectedVersionId(''); return; }
+    const q = new URLSearchParams({ categoryId: String(selectedCategoryId) });
+    if (selectedCorrectionTypeId !== '') q.set('correctionTypeId', String(selectedCorrectionTypeId));
+    const res = await fetch(`/api/admin/workflow-versions?${q}`);
+    const data = res.ok ? await res.json() : [];
+    const list = Array.isArray(data) ? data : [];
+    setVersions(list);
+    setSelectedVersionId((current) => list.some((v) => v.id === current) ? current : (list.find((v) => v.status === 'PUBLISHED')?.id ?? list[0]?.id ?? ''));
+  }, [selectedCategoryId, selectedCorrectionTypeId]);
 
   useEffect(() => {
     fetchMaster();
@@ -138,6 +157,33 @@ export default function AdminWorkflowTransitionsPage() {
   useEffect(() => {
     fetchTransitions();
   }, [fetchTransitions]);
+  useEffect(() => { fetchVersions().catch(() => setVersions([])); }, [fetchVersions]);
+
+  const selectedVersion = versions.find((v) => v.id === selectedVersionId);
+  const createDraft = async () => {
+    if (selectedCategoryId === '') return;
+    setVersionBusy(true);
+    try {
+      const res = await fetch('/api/admin/workflow-versions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categoryId: selectedCategoryId, correctionTypeId: selectedCorrectionTypeId === '' ? null : selectedCorrectionTypeId, sourceVersionId: selectedVersionId || undefined }) });
+      if (!res.ok) throw new Error((await res.json()).message || 'สร้าง Draft ไม่สำเร็จ');
+      const draft = await res.json(); setVersions((v) => [draft, ...v]); setSelectedVersionId(draft.id); showNotification('สร้าง Draft แล้ว', 'success');
+    } catch (e) { showNotification(e instanceof Error ? e.message : 'สร้าง Draft ไม่สำเร็จ', 'error'); } finally { setVersionBusy(false); }
+  };
+  const validateVersion = async (action: 'validate' | 'publish') => {
+    if (selectedVersionId === '') return;
+    setVersionBusy(true);
+    try {
+      const res = await fetch(`/api/admin/workflow-versions/${selectedVersionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.errors?.join(', ') || 'ตรวจสอบไม่สำเร็จ');
+      if (action === 'publish') { showNotification('Publish Workflow สำเร็จ', 'success'); await fetchVersions(); } else showNotification(data.valid ? 'Flow ผ่านการตรวจสอบ' : data.errors.join(', '), data.valid ? 'success' : 'error');
+    } catch (e) { showNotification(e instanceof Error ? e.message : 'ดำเนินการไม่สำเร็จ', 'error'); } finally { setVersionBusy(false); }
+  };
+  const simulate = async (requiresAccountRecheck: boolean) => {
+    if (selectedVersionId === '') return;
+    const res = await fetch('/api/admin/workflow-simulator', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId: selectedVersionId, requiresAccountRecheck }) });
+    const data = await res.json(); setSimulation(`${requiresAccountRecheck ? 'ติ๊กตรวจบัญชีซ้ำ' : 'ไม่ติ๊กตรวจบัญชีซ้ำ'} — ${data.errors?.length ? `ไม่ผ่าน: ${data.errors.join(', ')}` : `ผ่าน: ${data.path.map((p: any) => p.nextStatusCode || p.statusCode).filter(Boolean).join(' → ')}`}`);
+  };
 
   const openAdd = () => {
     setEditing(null);
@@ -148,6 +194,7 @@ export default function AdminWorkflowTransitionsPage() {
       nextStatusId: statuses[0]?.id ?? '',
       stepSequence: transitions.length + 1,
       filterByDepartment: false,
+      conditionKey: 'ALWAYS',
     });
     setModalOpen(true);
   };
@@ -161,6 +208,7 @@ export default function AdminWorkflowTransitionsPage() {
       nextStatusId: t.nextStatusId,
       stepSequence: t.stepSequence,
       filterByDepartment: t.filterByDepartment,
+      conditionKey: t.conditionKey || 'ALWAYS',
     });
     setModalOpen(true);
   };
@@ -184,6 +232,7 @@ export default function AdminWorkflowTransitionsPage() {
             nextStatusId: form.nextStatusId,
             stepSequence: form.stepSequence,
             filterByDepartment: form.filterByDepartment,
+            conditionKey: form.conditionKey,
           }),
         });
         const data = await res.json();
@@ -202,6 +251,8 @@ export default function AdminWorkflowTransitionsPage() {
             nextStatusId: form.nextStatusId,
             stepSequence: form.stepSequence,
             filterByDepartment: form.filterByDepartment,
+            workflowVersionId: selectedVersionId === '' ? undefined : selectedVersionId,
+            conditionKey: form.conditionKey,
           }),
         });
         const data = await res.json();
@@ -230,9 +281,14 @@ export default function AdminWorkflowTransitionsPage() {
     }
   };
 
-  const selectedCategoryName = categories.find((c) => c.CategoryID === Number(selectedCategoryId))?.CategoryName ?? '';
-  const selectedCorrectionTypeName =
-    selectedCorrectionTypeId === '' ? 'ทั่วไป' : correctionTypes.find((ct) => ct.CorrectionTypeID === selectedCorrectionTypeId)?.Name ?? '';
+  const selectedCategory = categories.find((c) => c.CategoryID === Number(selectedCategoryId));
+  const selectedCategoryName = selectedCategory
+    ? (selectedCategory.IsWorkflowTemplate ? `Workflow กลาง — ${selectedCategory.CategoryName}` : selectedCategory.CategoryName)
+    : '';
+  const isGenericWorkflow = selectedCorrectionTypeId === '';
+  const selectedCorrectionTypeName = isGenericWorkflow
+    ? 'ค่าเริ่มต้นของหมวดนี้'
+    : correctionTypes.find((ct) => ct.CorrectionTypeID === selectedCorrectionTypeId)?.Name ?? '';
 
   const handleCopyWorkflow = async () => {
     if (copySource.categoryId === '' || copyTarget.categoryId === '') {
@@ -295,7 +351,7 @@ export default function AdminWorkflowTransitionsPage() {
             กำหนดขั้นตอนอนุมัติต่อหมวดหมู่ — สถานะปัจจุบัน → Action + Role → สถานะถัดไป (ใช้จริงในการอนุมัติคำร้อง)
           </p>
         </div>
-        <Link href="/admin" className="text-blue-600 hover:underline text-sm">
+        <Link href="/admin" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-blue-700 border border-blue-200 rounded-full text-sm font-medium shadow-sm hover:bg-blue-50 hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-200">
           ← กลับไป Admin
         </Link>
       </div>
@@ -303,7 +359,8 @@ export default function AdminWorkflowTransitionsPage() {
       <details className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-900">
         <summary className="cursor-pointer font-medium">ความช่วยเหลือ — ทำความเข้าใจรายการสถานะ</summary>
         <ul className="mt-3 space-y-2 list-disc list-inside">
-          <li><strong>ลำดับการทำงานหลัก</strong> (ที่ seed ใช้): รอหัวหน้าแผนก (PENDING) → รอนำส่งบัญชีตรวจสอบ (WAITING_ACCOUNT_1) → รอผู้อนุมัติสูงสุด (WAITING_FINAL_APP) → รอ IT ดำเนินการ (IT_WORKING) → รอตรวจสอบหลังแก้ไข (WAITING_ACCOUNT_2) → รอ IT ปิดงาน (WAITING_IT_CLOSE) → ปิดงานเรียบร้อย (CLOSED). มีทางออก ถูกปฏิเสธ (REJECTED) ได้หลายจุด</li>
+          <li><strong>ลำดับการทำงานหลัก</strong>: รอหัวหน้าแผนก (PENDING) → บัญชีรอบ 1 (WAITING_ACCOUNT_1) → ผู้อนุมัติสูงสุด (WAITING_FINAL_APP) → IT ดำเนินการ (IT_WORKING). หลังจากนั้นระบบอ่านตัวเลือกบนใบคำขอ: ถ้าเลือกให้บัญชีตรวจซ้ำ จะไป WAITING_ACCOUNT_2 ก่อน WAITING_IT_CLOSE; ถ้าไม่เลือก จะไป WAITING_IT_CLOSE โดยตรง แล้ว IT Reviewer ปิดงานเป็น CLOSED</li>
+          <li><strong>Workflow กลาง</strong>: รายการที่ขึ้นต้นว่า “Workflow กลาง” ใช้เป็นค่าเริ่มต้นให้หมวดที่ยังไม่มี Workflow เฉพาะของตัวเอง ไม่ใช่หมวดที่ผู้ใช้ต้องเลือกในใบคำร้อง</li>
           <li><strong>ชื่อซ้ำใน dropdown:</strong> ถ้าเห็น &quot;รอ IT ปิดงาน&quot; สองอัน ให้ดูรหัสในวงเล็บ — ระบบใช้ <code>WAITING_IT_CLOSE</code> สำหรับขั้นรอ IT ปิดงาน (อีกอันคือ PENDING_IT_CLOSE ถ้ามี เป็นคนละสถานะใน DB)</li>
           <li><strong>สถานะอื่นในรายการ</strong> (เช่น PENDING_HOD, PENDING_ACCOUNT, PENDING_FINAL) อาจเป็นข้อมูลเก่าหรือเพิ่มจากเมนู &quot;จัดการสถานะ&quot; — จะมีผลกับคำร้องก็ต่อเมื่อมีขั้นตอนใน WorkflowTransition ที่อ้างถึงสถานะนั้น</li>
           <li>แต่ละตัวใน dropdown แสดงเป็น <strong>ชื่อ (รหัส)</strong> — ใช้รหัสเป็นหลักเวลาเลือก เพื่อไม่สับสนเมื่อชื่อเหมือนกัน</li>
@@ -317,13 +374,14 @@ export default function AdminWorkflowTransitionsPage() {
           onChange={(e) => {
             setSelectedCategoryId(e.target.value === '' ? '' : Number(e.target.value));
             setSelectedCorrectionTypeId('');
+            setSelectedVersionId('');
           }}
           className="border border-gray-300 rounded-lg px-3 py-2 min-w-[220px]"
         >
           <option value="">-- เลือกหมวดหมู่ --</option>
           {categories.map((c) => (
             <option key={c.CategoryID} value={c.CategoryID}>
-              {c.CategoryName}
+              {c.IsWorkflowTemplate ? `Workflow กลาง — ${c.CategoryName}` : c.CategoryName}
             </option>
           ))}
         </select>
@@ -335,13 +393,23 @@ export default function AdminWorkflowTransitionsPage() {
               onChange={(e) => setSelectedCorrectionTypeId(e.target.value === '' ? '' : Number(e.target.value))}
               className="border border-gray-300 rounded-lg px-3 py-2 min-w-[180px]"
             >
-              <option value="">ทั่วไป (ไม่ระบุประเภท)</option>
+              <option value="">ค่าเริ่มต้นของหมวดนี้ (ไม่ระบุประเภท)</option>
               {correctionTypes.map((ct) => (
                 <option key={ct.CorrectionTypeID} value={ct.CorrectionTypeID}>
                   {ct.Name}
                 </option>
               ))}
             </select>
+            <label className="font-medium text-gray-700">เวอร์ชัน:</label>
+            <select value={selectedVersionId === '' ? '' : selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value === '' ? '' : Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 min-w-[220px]">
+              {versions.map((v) => <option key={v.id} value={v.id}>v{v.versionNumber} · {v.status}{v.label ? ` · ${v.label}` : ''}</option>)}
+            </select>
+            <span className={`px-2 py-1 text-xs rounded-full ${selectedVersion?.status === 'PUBLISHED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{selectedVersion?.status || 'ไม่มีเวอร์ชัน'}</span>
+            <button type="button" onClick={createDraft} disabled={versionBusy} className="px-3 py-2 border rounded-lg text-sm">สร้าง Draft ใหม่</button>
+            <button type="button" onClick={() => validateVersion('validate')} disabled={versionBusy || selectedVersionId === ''} className="px-3 py-2 border rounded-lg text-sm">ตรวจสอบ Flow</button>
+            <button type="button" onClick={() => validateVersion('publish')} disabled={versionBusy || selectedVersion?.status === 'PUBLISHED' || selectedVersionId === ''} className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm">Publish</button>
+            <button type="button" onClick={() => simulate(true)} disabled={selectedVersionId === ''} className="px-3 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm">จำลอง Flow (ติ๊ก)</button>
+            <button type="button" onClick={() => simulate(false)} disabled={selectedVersionId === ''} className="px-3 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm">จำลอง Flow (ไม่ติ๊ก)</button>
             <button
               type="button"
               onClick={openAdd}
@@ -390,7 +458,7 @@ export default function AdminWorkflowTransitionsPage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 font-medium text-gray-700">
             ขั้นตอนอนุมัติ: {selectedCategoryName}
-            {selectedCorrectionTypeName !== 'ทั่วไป' && ` (${selectedCorrectionTypeName})`}
+            {!isGenericWorkflow && ` (${selectedCorrectionTypeName})`}
           </div>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -401,6 +469,7 @@ export default function AdminWorkflowTransitionsPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">สถานะถัดไป</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">จำกัดแผนก</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">เงื่อนไข</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">เครื่องมือ</th>
               </tr>
             </thead>
@@ -419,6 +488,7 @@ export default function AdminWorkflowTransitionsPage() {
                         {t.filterByDepartment ? 'ใช่' : 'ไม่'}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-center text-xs text-gray-600">{t.conditionKey || 'ALWAYS'}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button type="button" onClick={() => openEdit(t)} className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="แก้ไข">
@@ -440,6 +510,7 @@ export default function AdminWorkflowTransitionsPage() {
           )}
         </div>
       )}
+      {simulation && <div className="mt-4 p-3 rounded-lg bg-purple-50 border border-purple-200 text-sm text-purple-900">{simulation}</div>}
 
       {/* Modal เพิ่ม/แก้ไข */}
       {modalOpen && (
@@ -521,6 +592,14 @@ export default function AdminWorkflowTransitionsPage() {
                 />
                 <span className="text-sm">จำกัดผู้อนุมัติในแผนกเดียวกับผู้ยื่น (filterByDepartment)</span>
               </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เงื่อนไขเส้นทาง</label>
+                <select value={form.conditionKey} onChange={(e) => setForm((f) => ({ ...f, conditionKey: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                  <option value="ALWAYS">ทุกคำขอ</option>
+                  <option value="ACCOUNT_RECHECK_REQUIRED">ติ๊กให้บัญชีตรวจซ้ำ</option>
+                  <option value="ACCOUNT_RECHECK_SKIPPED">ไม่ติ๊กตรวจซ้ำ</option>
+                </select>
+              </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
@@ -577,7 +656,7 @@ export default function AdminWorkflowTransitionsPage() {
                 >
                   <option value="">-- เลือกหมวดหมู่ --</option>
                   {categories.map((c) => (
-                    <option key={c.CategoryID} value={c.CategoryID}>{c.CategoryName}</option>
+                  <option key={c.CategoryID} value={c.CategoryID}>{c.IsWorkflowTemplate ? `Workflow กลาง — ${c.CategoryName}` : c.CategoryName}</option>
                   ))}
                 </select>
               </div>
@@ -588,7 +667,7 @@ export default function AdminWorkflowTransitionsPage() {
                   onChange={(e) => setCopySource((s) => ({ ...s, correctionTypeId: e.target.value === '' ? '' : Number(e.target.value) }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 >
-                  <option value="">ทั่วไป</option>
+                  <option value="">ค่าเริ่มต้นของหมวดนี้</option>
                   {copySourceCorrectionTypes.map((ct) => (
                     <option key={ct.CorrectionTypeID} value={ct.CorrectionTypeID}>{ct.Name}</option>
                   ))}
@@ -612,7 +691,7 @@ export default function AdminWorkflowTransitionsPage() {
                 >
                   <option value="">-- เลือกหมวดหมู่ --</option>
                   {categories.map((c) => (
-                    <option key={c.CategoryID} value={c.CategoryID}>{c.CategoryName}</option>
+                  <option key={c.CategoryID} value={c.CategoryID}>{c.IsWorkflowTemplate ? `Workflow กลาง — ${c.CategoryName}` : c.CategoryName}</option>
                   ))}
                 </select>
               </div>
@@ -623,7 +702,7 @@ export default function AdminWorkflowTransitionsPage() {
                   onChange={(e) => setCopyTarget((s) => ({ ...s, correctionTypeId: e.target.value === '' ? '' : Number(e.target.value) }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 >
-                  <option value="">ทั่วไป</option>
+                  <option value="">ค่าเริ่มต้นของหมวดนี้</option>
                   {copyTargetCorrectionTypes.map((ct) => (
                     <option key={ct.CorrectionTypeID} value={ct.CorrectionTypeID}>{ct.Name}</option>
                   ))}
@@ -648,7 +727,7 @@ export default function AdminWorkflowTransitionsPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
             <p className="text-gray-700 mb-4">
               ลบ Workflow ทั้งหมดของ &quot;{selectedCategoryName}
-              {selectedCorrectionTypeName !== 'ทั่วไป' ? ` (${selectedCorrectionTypeName})` : ''}&quot; ใช่หรือไม่? ({transitions.length} รายการ)
+              {!isGenericWorkflow ? ` (${selectedCorrectionTypeName})` : ''}&quot; ใช่หรือไม่? ({transitions.length} รายการ)
             </p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setConfirmDeleteAll(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">

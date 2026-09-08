@@ -2,6 +2,7 @@ import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleApiError } from '@/lib/api-error';
+import { WORKFLOW_VERSION_STATUS, getPublishedWorkflowVersion } from '@/lib/workflow-versioning';
 
 /** GET /api/admin/workflow-transitions?categoryId=1&correctionTypeId= — รายการ Transition ต่อหมวดหมู่ (ขั้นตอนอนุมัติที่ใช้จริง) */
 export async function GET(request: NextRequest) {
@@ -14,14 +15,15 @@ export async function GET(request: NextRequest) {
     correctionTypeIdParam != null && correctionTypeIdParam !== ''
       ? Number(correctionTypeIdParam)
       : null;
+  const workflowVersionIdParam = request.nextUrl.searchParams.get('workflowVersionId');
+  const workflowVersionId = workflowVersionIdParam ? Number(workflowVersionIdParam) : null;
   if (categoryId == null || categoryId < 1) {
     return NextResponse.json({ message: 'กรุณาระบุ categoryId' }, { status: 400 });
   }
   try {
     const list = await prisma.workflowTransition.findMany({
       where: {
-        categoryId,
-        correctionTypeId: correctionTypeId ?? null,
+        ...(workflowVersionId ? { workflowVersionId } : { categoryId, correctionTypeId: correctionTypeId ?? null }),
       },
       orderBy: [{ stepSequence: 'asc' }, { id: 'asc' }],
       include: {
@@ -30,6 +32,7 @@ export async function GET(request: NextRequest) {
         action: { select: { id: true, actionName: true, displayName: true } },
         requiredRole: { select: { id: true, roleName: true } },
         category: { select: { id: true, name: true } },
+        workflowVersion: { select: { id: true, versionNumber: true, status: true, label: true } },
       },
     });
     return NextResponse.json(
@@ -48,6 +51,8 @@ export async function GET(request: NextRequest) {
         nextStatus: t.nextStatus,
         stepSequence: t.stepSequence,
         filterByDepartment: t.filterByDepartment,
+        conditionKey: t.conditionKey,
+        workflowVersion: t.workflowVersion,
       }))
     );
   } catch (e) {
@@ -72,6 +77,8 @@ export async function POST(request: NextRequest) {
     const nextStatusId = body.nextStatusId != null ? Number(body.nextStatusId) : undefined;
     const stepSequence = body.stepSequence != null ? Number(body.stepSequence) : 1;
     const filterByDepartment = body.filterByDepartment === true;
+    const conditionKey = typeof body.conditionKey === 'string' && body.conditionKey ? body.conditionKey : 'ALWAYS';
+    const workflowVersionId = body.workflowVersionId ? Number(body.workflowVersionId) : await getPublishedWorkflowVersion(prisma, categoryId!, correctionTypeId).then((v) => v?.id ?? null);
 
     if (categoryId == null || categoryId < 1)
       return NextResponse.json({ message: 'กรุณาเลือกหมวดหมู่' }, { status: 400 });
@@ -83,10 +90,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'กรุณาเลือก Role ผู้อนุมัติ' }, { status: 400 });
     if (nextStatusId == null || nextStatusId < 1)
       return NextResponse.json({ message: 'กรุณาเลือกสถานะถัดไป' }, { status: 400 });
+    if (!workflowVersionId) return NextResponse.json({ message: 'ไม่พบ Workflow Version ที่ใช้งาน' }, { status: 400 });
+    const version = await prisma.workflowVersion.findUnique({ where: { id: workflowVersionId }, select: { status: true } });
+    if (version?.status === WORKFLOW_VERSION_STATUS.PUBLISHED) return NextResponse.json({ message: 'ต้องแก้ไขใน Draft แล้ว Publish ใหม่' }, { status: 409 });
 
     const created = await prisma.workflowTransition.create({
       data: {
         categoryId,
+        workflowVersionId,
         correctionTypeId,
         currentStatusId,
         actionId,
@@ -94,6 +105,7 @@ export async function POST(request: NextRequest) {
         nextStatusId,
         stepSequence: stepSequence >= 0 ? stepSequence : 0,
         filterByDepartment,
+        conditionKey,
       },
       include: {
         currentStatus: { select: { id: true, code: true, displayName: true } },
@@ -101,6 +113,7 @@ export async function POST(request: NextRequest) {
         action: { select: { id: true, actionName: true, displayName: true } },
         requiredRole: { select: { id: true, roleName: true } },
         category: { select: { id: true, name: true } },
+        workflowVersion: { select: { id: true, versionNumber: true, status: true, label: true } },
       },
     });
     return NextResponse.json({
@@ -118,6 +131,8 @@ export async function POST(request: NextRequest) {
       nextStatus: created.nextStatus,
       stepSequence: created.stepSequence,
       filterByDepartment: created.filterByDepartment,
+      conditionKey: created.conditionKey,
+      workflowVersion: created.workflowVersion,
     });
   } catch (e: unknown) {
     const code = e && typeof e === 'object' && 'code' in e ? (e as { code: string }).code : '';
@@ -138,14 +153,15 @@ export async function DELETE(request: NextRequest) {
     correctionTypeIdParam != null && correctionTypeIdParam !== ''
       ? Number(correctionTypeIdParam)
       : null;
+  const workflowVersionIdParam = request.nextUrl.searchParams.get('workflowVersionId');
+  const workflowVersionId = workflowVersionIdParam ? Number(workflowVersionIdParam) : null;
   if (categoryId == null || categoryId < 1) {
     return NextResponse.json({ message: 'กรุณาระบุ categoryId' }, { status: 400 });
   }
   try {
     const result = await prisma.workflowTransition.deleteMany({
       where: {
-        categoryId,
-        correctionTypeId: correctionTypeId ?? null,
+        ...(workflowVersionId ? { workflowVersionId } : { categoryId, correctionTypeId: correctionTypeId ?? null }),
       },
     });
     return NextResponse.json({ message: `ลบ Workflow แล้ว (${result.count} รายการ)`, count: result.count });
