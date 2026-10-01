@@ -194,7 +194,61 @@ export default function PendingTasksPage() {
           ไม่มีรายการที่ต้องอนุมัติหรือดำเนินการในขณะนี้
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+        <>
+        {/* Phones: one card per request so the approve action is always on screen */}
+        <ul className="space-y-3 md:hidden">
+          {allowBulk && (
+            <li className="flex items-center gap-2 px-1 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                aria-label="เลือกทั้งหมด"
+                checked={selected.length === requests.length && requests.length > 0}
+                onChange={handleSelectAll}
+                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>เลือกทั้งหมด</span>
+            </li>
+          )}
+          {requests.map((req) => (
+            <li key={req.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {allowBulk && (
+                    <input
+                      type="checkbox"
+                      aria-label={`เลือก ${req.workOrderNo ?? `#${req.id}`}`}
+                      checked={selected.includes(req.id)}
+                      onChange={() => handleSelectOne(req.id)}
+                      className="h-5 w-5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  )}
+                  <Link href={`/request/${req.id}`} className="break-all font-medium text-blue-600 hover:underline">
+                    {req.workOrderNo ?? `#${req.id}`}
+                  </Link>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                  รอขั้นที่ {req.currentApprovalStep}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm text-gray-700">{req.problemDetail}</p>
+              <p className="mt-2 text-xs text-gray-500">
+                {req.thaiName ?? req.requester?.fullName}
+                {req.department?.name ? ` · ${req.department.name}` : ''}
+                {' · '}
+                {new Date(req.createdAt).toLocaleDateString('th-TH')}
+              </p>
+              <Link
+                href={`/request/${req.id}`}
+                className="mt-3 flex w-full items-center justify-center rounded-md bg-blue-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+              >
+                อนุมัติ/ดำเนินการ
+              </Link>
+            </li>
+          ))}
+        </ul>
+
+        {/* Tablet and up: the full table */}
+        <div className="hidden rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm md:block">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
@@ -264,6 +318,7 @@ export default function PendingTasksPage() {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {/* ─── Bulk Action: Step 1 — ตรวจสอบรายละเอียด ─── */}
