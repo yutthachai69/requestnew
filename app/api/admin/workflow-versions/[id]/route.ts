@@ -29,7 +29,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       });
       return NextResponse.json({ ...published, validation });
     }
-    if (action === 'archive') return NextResponse.json(await prisma.workflowVersion.update({ where: { id }, data: { status: WORKFLOW_VERSION_STATUS.ARCHIVED } }));
+    if (action === 'archive') {
+      // Archiving the live PUBLISHED version directly (instead of replacing
+      // it by publishing another) can leave the category with none: routing
+      // then falls back to an unscoped query across every version ever
+      // created for it, silently doubling "required approvals" counts on
+      // steps that have a single approver and stalling requests forever.
+      // Publishing a replacement is the only supported way to retire one.
+      if (version.status === WORKFLOW_VERSION_STATUS.PUBLISHED) {
+        return NextResponse.json(
+          { message: 'เวอร์ชันนี้กำลังใช้งานอยู่ ต้อง Publish เวอร์ชันใหม่แทนที่ก่อนจึงจะ Archive เวอร์ชันนี้ได้' },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json(await prisma.workflowVersion.update({ where: { id }, data: { status: WORKFLOW_VERSION_STATUS.ARCHIVED } }));
+    }
     if (version.status === WORKFLOW_VERSION_STATUS.PUBLISHED) return NextResponse.json({ message: 'ต้องสร้าง Draft ใหม่ก่อนแก้ไขเวอร์ชันที่ Publish แล้ว' }, { status: 409 });
     return NextResponse.json(await prisma.workflowVersion.update({ where: { id }, data: { label: body.label == null ? version.label : String(body.label) } }));
   } catch (e) { return handleApiError(e, 'PUT workflow version'); }
