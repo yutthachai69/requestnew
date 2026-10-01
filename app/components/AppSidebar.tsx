@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { getTabsForRole, type TabItem } from '@/lib/auth-constants';
 import { adminMenuItems } from '@/lib/admin-menu';
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { useSidebar } from '@/app/context/SidebarContext';
 import { useAppNotification } from '@/app/context/AppNotificationContext';
 import { useCategories } from '@/app/context/CategoryContext';
@@ -204,8 +204,14 @@ function AppSidebar() {
     if (pathname?.startsWith('/category')) setCategoriesOpen(true);
   }, [pathname]);
 
-  // Close mobile menu when navigating
+  // Close mobile menu when navigating. Only react to an actual pathname
+  // change: effects also run on mount, and the mobile drawer mounts a fresh
+  // AppSidebar each time it opens, so closing unconditionally here shut the
+  // drawer the instant it appeared and left mobile users with no navigation.
+  const previousPathname = useRef(pathname);
   useEffect(() => {
+    if (previousPathname.current === pathname) return;
+    previousPathname.current = pathname;
     closeMobile();
   }, [pathname, closeMobile]);
 
