@@ -192,25 +192,46 @@ async function main() {
     // Clear existing transitions for clean slate (optional, but good for dev)
     await prisma.workflowTransition.deleteMany({ where: { categoryId: cat.id } });
 
+    // Transitions belong to a WorkflowVersion, and requests pin to one, so a seeded database
+    // needs a published baseline exactly like the one the SQL migrations give an existing
+    // database. Reuse v1 if it is already there (requests may reference it) and make it the
+    // only live generic version, so a leftover published version with no transitions can't
+    // take over routing.
+    const existingBaseline = await prisma.workflowVersion.findFirst({
+      where: { categoryId: cat.id, correctionTypeId: null, versionNumber: 1 },
+    });
+    const baseline = existingBaseline
+      ? await prisma.workflowVersion.update({ where: { id: existingBaseline.id }, data: { status: 'PUBLISHED', publishedAt: new Date() } })
+      : await prisma.workflowVersion.create({
+          data: { categoryId: cat.id, correctionTypeId: null, versionNumber: 1, status: 'PUBLISHED', label: 'Baseline v1', publishedAt: new Date() },
+        });
+    await prisma.workflowVersion.updateMany({
+      where: { categoryId: cat.id, correctionTypeId: null, status: 'PUBLISHED', id: { not: baseline.id } },
+      data: { status: 'ARCHIVED' },
+    });
+    const wf = { workflowVersionId: baseline.id };
+
     // Standard Steps
     // 1. PENDING -> WAITING_ACCOUNT_1 (Head Approve)
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('PENDING'), actionId: 1, requiredRoleId: ridHead, nextStatusId: sid('WAITING_ACCOUNT_1'), stepSequence: 1, filterByDepartment: true } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('PENDING'), actionId: 1, requiredRoleId: ridHead, nextStatusId: sid('WAITING_ACCOUNT_1'), stepSequence: 1, filterByDepartment: true } });
 
     // 2. WAITING_ACCOUNT_1 -> WAITING_FINAL_APP (Accountant Approve)
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_1'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_FINAL_APP'), stepSequence: 2, filterByDepartment: false } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_1'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_FINAL_APP'), stepSequence: 2, filterByDepartment: false } });
 
     // 3. WAITING_FINAL_APP -> IT_WORKING (Final Approve)
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_FINAL_APP'), actionId: 1, requiredRoleId: ridFinal, nextStatusId: sid('IT_WORKING'), stepSequence: 3, filterByDepartment: false } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('WAITING_FINAL_APP'), actionId: 1, requiredRoleId: ridFinal, nextStatusId: sid('IT_WORKING'), stepSequence: 3, filterByDepartment: false } });
 
-    // 4. IT_WORKING -> WAITING_ACCOUNT_2 (default route; approvalService
-    //    skips to WAITING_IT_CLOSE when the request did not ask for recheck)
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_ACCOUNT_2'), stepSequence: 4, filterByDepartment: false } });
+    // 4. IT_WORKING -> IT completes. Which status comes next is chosen by the request's
+    //    requiresAccountRecheck through conditionKey; nothing in approvalService does it
+    //    (it follows the matching transition's nextStatus), so both branches must exist here.
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_ACCOUNT_2'), stepSequence: 4, filterByDepartment: false, conditionKey: 'ACCOUNT_RECHECK_REQUIRED' } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('IT_WORKING'), actionId: 3, requiredRoleId: ridIT, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 4, filterByDepartment: false, conditionKey: 'ACCOUNT_RECHECK_SKIPPED' } });
 
     // 5. Optional accountant recheck always hands the request to IT Reviewer.
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 5, filterByDepartment: false } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('WAITING_ACCOUNT_2'), actionId: 1, requiredRoleId: ridAccountant, nextStatusId: sid('WAITING_IT_CLOSE'), stepSequence: 5, filterByDepartment: false } });
 
     // 6. Required by the unchecked path: IT Operator -> IT Reviewer -> CLOSED.
-    await prisma.workflowTransition.create({ data: { categoryId: cat.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 6, filterByDepartment: false } });
+    await prisma.workflowTransition.create({ data: { ...wf, categoryId: cat.id, currentStatusId: sid('WAITING_IT_CLOSE'), actionId: 4, requiredRoleId: ridITReviewer, nextStatusId: sid('CLOSED'), stepSequence: 6, filterByDepartment: false } });
 
     // Rejection Paths (Available at all steps)
     const rejectTargets = [
@@ -227,6 +248,7 @@ async function main() {
         data: {
           categoryId: cat.id,
           currentStatusId: sid(t.status),
+          ...wf,
           actionId: 2, // REJECT
           requiredRoleId: t.role,
           nextStatusId: sid('REVISION'),
