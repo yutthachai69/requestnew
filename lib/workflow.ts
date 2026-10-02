@@ -17,15 +17,22 @@ export async function findTransitionsByStatus(
 ) {
   const list = await prisma.workflowTransition.findMany({
     where: {
-      // A resolved-but-absent version (no PUBLISHED version anywhere for this
-      // category, including the shared template) must fail closed. Matching
-      // on categoryId alone here would silently merge every version ever
-      // created for it — including archived and draft ones — which can
-      // double-count a single-approver step's required votes and leave the
-      // request waiting on an approver who does not exist. `workflowVersionId:
-      // null` only matches transitions never migrated into a version.
-      categoryId,
-      workflowVersionId: workflowVersionId ?? null,
+      // A version id alone identifies the rows. Do NOT also filter on the
+      // request's categoryId when a version is given: a category can inherit
+      // the shared template's version (resolveWorkflowVersionId), whose
+      // transitions carry the template category's id, so adding categoryId
+      // matches nothing and makes every request in an inheriting category
+      // unapprovable (NO_TRANSITION).
+      //
+      // With no version (none resolved), fail closed. Matching on categoryId
+      // alone would silently merge every version ever created for the
+      // category — archived and draft included — which double-counts a
+      // single-approver step's required votes and strands the request waiting
+      // on an approver who does not exist. `workflowVersionId: null` matches
+      // only transitions that were never migrated into a version.
+      ...(workflowVersionId != null
+        ? { workflowVersionId }
+        : { categoryId, workflowVersionId: null }),
       currentStatusId,
       correctionTypeId: correctionTypeId ?? null,
     },
