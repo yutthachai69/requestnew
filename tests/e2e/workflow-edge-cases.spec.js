@@ -91,6 +91,12 @@ async function requestStatus(page, id) {
   return (await requestDetail(page, id)).request.status;
 }
 
+// Actions and edits must carry the version (updatedAt) the caller last saw; the server answers 409
+// CONFLICT to anything else, before it looks at permissions or state. Fetch it fresh for each call.
+async function versionOf(page, id) {
+  return (await requestDetail(page, id)).request.updatedAt;
+}
+
 async function createRequestThroughUI(page, problemDetail) {
   await gotoWithRetry(page, '/request/new');
   await page.waitForTimeout(700);
@@ -291,7 +297,7 @@ test.describe('email-link approval token lifecycle', () => {
       const staleToken = await approvalTokenFor(head, requestId);
 
       const reject = await head.request.post(`/api/requests/${requestId}/action`, {
-        data: { actionName: 'REJECT', comment: 'EDGE TEST: ส่งกลับแก้ไข' },
+        data: { actionName: 'REJECT', comment: 'EDGE TEST: ส่งกลับแก้ไข', updatedAt: await versionOf(head, requestId) },
       });
       expect(reject.ok(), `reject → ${reject.status()}`).toBeTruthy();
       await expect.poll(async () => requestStatus(admin, requestId)).toBe('REVISION');
@@ -760,7 +766,7 @@ test.describe('PDF layout with long Thai text', () => {
         'EDGE TEST ' +
         'ระบบขัดข้องไม่สามารถบันทึกข้อมูลได้กรุณาตรวจสอบโดยด่วนที่สุด'.repeat(40);
       const updated = await requester.request.put(`/api/requests/${longId}`, {
-        data: { problemDetail: longDetail },
+        data: { problemDetail: longDetail, updatedAt: await versionOf(requester, longId) },
       });
       expect(updated.status(), await updated.text()).toBe(200);
 

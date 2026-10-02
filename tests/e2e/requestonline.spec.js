@@ -77,6 +77,12 @@ async function requestDetail(page, id) {
   return response.json();
 }
 
+// Actions and edits must carry the version (updatedAt) the caller last saw; the server answers 409
+// CONFLICT to anything else, before it looks at permissions or state. Fetch it fresh for each call.
+async function versionOf(page, id) {
+  return (await requestDetail(page, id)).request.updatedAt;
+}
+
 async function createRequestThroughUI(page, withAttachment = false) {
   await gotoWithRetry(page, '/request/new');
   await page.waitForTimeout(700);
@@ -302,7 +308,7 @@ test.describe('RequestOnline safe smoke tests', () => {
     test.skip(!closedRequest?.id, 'No closed request available for workflow edge-case test');
 
     const actionResponse = await page.request.post(`/api/requests/${closedRequest.id}/action`, {
-      data: { actionName: 'APPROVE' },
+      data: { actionName: 'APPROVE', updatedAt: await versionOf(page, closedRequest.id) },
     });
     expect(actionResponse.status()).toBe(400);
     const detail = await requestDetail(page, closedRequest.id);
@@ -1017,9 +1023,12 @@ test.describe('RequestOnline mutation workflow', () => {
       await login(requester, accounts.testRequester);
       requestId = await createRequestThroughUI(requester);
 
+      // The version must be current so the request reaches file validation; a stale one is a 409
+      // that would never exercise the check this test is about.
       const fakeFileResponse = await requester.request.put(`/api/requests/${requestId}`, {
         multipart: {
           problemDetail: 'Upload validation test',
+          updatedAt: await versionOf(requester, requestId),
           existingFiles: '[]',
           attachments: {
             name: 'fake.png',
@@ -1033,6 +1042,7 @@ test.describe('RequestOnline mutation workflow', () => {
       const oversizedFileResponse = await requester.request.put(`/api/requests/${requestId}`, {
         multipart: {
           problemDetail: 'Upload validation test',
+          updatedAt: await versionOf(requester, requestId),
           existingFiles: '[]',
           attachments: {
             name: 'oversized.pdf',
@@ -1113,12 +1123,15 @@ test.describe('RequestOnline mutation workflow', () => {
 
       const duplicateHead = await newAccountPage(accounts.head);
       const duplicateHeadContext = duplicateHead.context();
+      // Both clicks carry the same version, as two browser tabs showing the same screen would.
+      // Exactly one may win; the other must be refused as a conflict, never written twice.
+      const seenVersion = await versionOf(duplicateHead, requestId);
       const duplicateResponses = await Promise.all([
-        duplicateHead.request.post(`/api/requests/${requestId}/action`, { data: { actionName: 'APPROVE' } }),
-        duplicateHead.request.post(`/api/requests/${requestId}/action`, { data: { actionName: 'APPROVE' } }),
+        duplicateHead.request.post(`/api/requests/${requestId}/action`, { data: { actionName: 'APPROVE', updatedAt: seenVersion } }),
+        duplicateHead.request.post(`/api/requests/${requestId}/action`, { data: { actionName: 'APPROVE', updatedAt: seenVersion } }),
       ]);
       const duplicateStatuses = duplicateResponses.map((response) => response.status()).sort((a, b) => a - b);
-      expect(duplicateStatuses, `duplicate action responses: ${duplicateStatuses.join(',')}`).toEqual([200, 400]);
+      expect(duplicateStatuses, `duplicate action responses: ${duplicateStatuses.join(',')}`).toEqual([200, 409]);
       expect((await requestDetail(requester, requestId)).request.status).toBe('WAITING_ACCOUNT_1');
       contexts.splice(contexts.indexOf(duplicateHeadContext), 1);
       await duplicateHeadContext.close();
@@ -1197,7 +1210,7 @@ test.describe('RequestOnline mutation workflow', () => {
 
       const otherDepartmentHead = await accountPage(process.env.TEST_OTHER_DEPT_HEAD ?? 'head_store', clientBase + 1);
       const response = await otherDepartmentHead.request.post(`/api/requests/${requestId}/action`, {
-        data: { actionName: 'APPROVE' },
+        data: { actionName: 'APPROVE', updatedAt: await versionOf(requester, requestId) },
       });
       expect(response.status()).toBe(403);
       expect((await requestDetail(requester, requestId)).request.status).toBe('PENDING');
@@ -1285,11 +1298,14 @@ test.describe('RequestOnline mutation workflow', () => {
       }
 
       const head = await accountPage(accounts.head, clientBase + 1);
+      const versions = {};
+      for (const requestId of requestIds) versions[requestId] = await versionOf(requester, requestId);
       const response = await head.request.post('/api/requests/bulk-action', {
         data: {
           requestIds,
           actionName: 'REJECT',
           comment: 'SMOKE TEST bulk rejection',
+          versions,
         },
       });
       const body = await response.json();
