@@ -13,6 +13,29 @@ the application build. It adds `approvalRound = 1` to existing requests and
 history rows and creates an index for current-round checks; it does not delete
 historical approval data.
 
+## Applying the schema scripts to an existing database
+
+The `add_*.sql` scripts in `prisma/migrations/` are idempotent (each checks `COL_LENGTH` / `OBJECT_ID` / `sys.indexes` first and runs in a transaction), but **they depend on each other, so apply them in this order**:
+
+| # | Script | Adds |
+|---|---|---|
+| 1 | `add_request_account_recheck.sql` | `ITRequestF07.requiresAccountRecheck`; rewrites the IT-completion / accountant-recheck / IT-reviewer transitions |
+| 2 | `add_workflow_versioning.sql` | `WorkflowVersion`, `workflowVersionId` / `conditionKey` columns; backfills every transition into a published `Baseline v1` and splits IT completion into `ACCOUNT_RECHECK_REQUIRED` / `ACCOUNT_RECHECK_SKIPPED` |
+| 3 | `add_workflow_template.sql` | `Category.isWorkflowTemplate`; marks "ทั่วไป" as the shared template |
+| 4 | `add_approval_round.sql` | `approvalRound` on `ITRequestF07` and `ApprovalHistory` (existing rows become round 1) |
+
+Why #1 goes before #2: #1 inserts `WorkflowTransition` rows without a `workflowVersionId` (only where a route is missing), and #2 is the script that backfills rows that have none. Run in the other order, any row #1 still has to insert is left unversioned, and no published version contains it. #3 and #4 do not depend on the others. This order is derived from reading the scripts; the full chain has not yet been replayed from a pre-change copy of the database, so do that on a restored copy (see the restore drill) before the first production run.
+
+`add_status_table.sql`, `add_audit_log_request_id.sql` and `add_workflow_filter_and_special_approver.sql` are SQLite/PostgreSQL syntax from earlier in the project. They cannot run on SQL Server and are not part of the chain.
+
+After the scripts: `npx prisma generate`, then **restart every running Next.js process** — a process started before `generate` keeps the old Prisma Client and fails on the new columns even though the database is correct. Skipping the SQL is worse: code that selects `approvalRound` returns 500 from `/api/app/shell` on every page.
+
+### Brand-new database (baseline + seed)
+
+`prisma/sqlserver-baseline.sql` already contains all of the columns above, so a new database takes the baseline and then `npx prisma db seed` and none of the `add_*.sql` scripts. `prisma/seed.ts` now creates a published `Baseline v1` per category, versions every transition, and seeds both account-recheck branches, so a freshly seeded database routes the same way a migrated one does. Before that fix a seeded database had no workflow versions and silently ignored the requester's "recheck by accounting" choice (the unchecked branch still went to `WAITING_ACCOUNT_2`). Re-running the seed is safe: it reuses `v1`, makes it the only live generic version, and **rebuilds each category's transitions from scratch**, so it discards any edits made through the workflow admin page — do not run it against a database whose workflows were customised.
+
+`scripts/seed-general-2.ts` (the "ทั่วไป 2" correction-type workflow) still creates transitions without a `workflowVersionId`. Whether those are reachable once versions exist has not been checked; treat that script as unverified.
+
 ## Known local blocker
 
 The application connects through `@prisma/adapter-mssql`, but Prisma's native migration engine on this Windows machine fails during the SQL Server TLS handshake with `P1011` (`No credentials are available in the security package`). This occurs with both SQL Authentication and Windows Authentication, and with `encrypt=true` or `encrypt=false`; `encrypt=false` still protects the login exchange according to Prisma's SQL Server connection behavior.

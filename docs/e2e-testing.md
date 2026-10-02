@@ -1,35 +1,54 @@
 # E2E testing
 
-The Playwright suite is local-only and uses a single worker.
+ชุดทดสอบ Playwright อยู่ที่ `tests/e2e/` รัน worker เดียว ใช้ได้เฉพาะในเครื่องนักพัฒนา
 
-Start the app separately on `http://localhost:3000`. For mutation runs, make
-sure the server-side email and webhook settings are disabled or point to a
-local test sink before starting Next.js.
-
-Read-only smoke tests:
+## รันยังไง
 
 ```powershell
-$env:TEST_PASSWORD = '<seeded-test-password>'
-npm run test:e2e
+npm run build          # ต้อง build ก่อนทุกครั้งที่แก้โค้ด — เทสต์รัน `npm run start` (production) ไม่ใช่ dev
+npm run test:e2e       # ทั้งชุด
+npm run test:e2e -- --grep "token"                  # เฉพาะเคสที่ชื่อตรง
+npm run test:e2e -- tests/e2e/mobile.spec.js        # เฉพาะไฟล์
 ```
 
-Mutation workflow test (creates and deletes a request marked `SMOKE TEST`):
+`npm run test:e2e` (`scripts/run-e2e.mjs`) จัดการให้ครบในคำสั่งเดียว:
+
+1. เช็คว่าพอร์ต 3000 ว่าง (ถ้าไม่ว่างจะหยุดและบอกให้ปิดตัวที่ค้างก่อน)
+2. เปิด **email sink** ที่ `127.0.0.1:4010` แล้วตั้ง `INTERNAL_EMAIL_API_URL` ของเซิร์ฟเวอร์ที่ Playwright เปิดให้ชี้มาที่นั่น
+   — เมลทั้งหมดจึงไม่ออกไปข้างนอก (sink แค่พิมพ์ผู้รับ/หัวข้อลง console)
+3. ตั้ง `RUN_MUTATION_TESTS=true` และ `TEST_PASSWORD=1234` ให้ถ้ายังไม่ได้ตั้ง
+4. รัน Playwright แล้วปิด sink ไม่ว่าผลจะผ่านหรือไม่
+
+## สิ่งที่ต้องรู้ก่อนรัน
+
+- **เทสต์เขียนข้อมูลจริงลงฐานข้อมูลที่ `.env` ชี้อยู่** (สร้างและลบคำร้อง/บัญชี `e2e_*` ของตัวเอง)
+  ห้ามรันกับฐานข้อมูลที่มีข้อมูลจริง ให้ชี้ `MSSQL_DATABASE` ไปฐานทดสอบก่อน
+- ถ้าเทสต์ถูกฆ่ากลางคัน อาจมีบัญชี/ข้อมูลค้าง ล้างด้วย `scripts/cleanup-e2e-data.sql`
+  (ค่าเริ่มต้นเป็น dry run — ตั้ง `@Execute = 1` ถึงจะลบจริง) หรือ `scripts/e2e-cleanup.ts`
+- ถ้าตั้ง `TEST_BASE_URL` Playwright จะ**ไม่เปิดเซิร์ฟเวอร์เอง** และไม่ผ่าน sink — เมลจะออกตามค่า
+  `INTERNAL_EMAIL_API_URL`/SMTP ของเซิร์ฟเวอร์ที่ชี้ไป ต้องตั้ง sink เองก่อนสตาร์ทเซิร์ฟเวอร์นั้น
+  (`node scripts/test-email-sink.mjs` แล้วตั้ง `INTERNAL_EMAIL_API_URL=http://127.0.0.1:4010/send`)
+  ข้อนี้รวมถึงการลองมือกับ `npm run dev` ด้วย: ถ้า `.env` ชี้ mail API จริง ทุกครั้งที่อนุมัติ/สร้างคำร้องจะยิงเมลจริง
+
+## ไฟล์ทดสอบ
+
+| ไฟล์ | ครอบคลุม (ตามชื่อเคสจริง) |
+|---|---|
+| `requestonline.spec.js` | **Smoke (อ่านอย่างเดียว):** หน้า/API ที่ไม่ login ถูกกัน, input ผิดรูปแบบ, หน้า admin เฉพาะ admin, rate limit ปลอม IP ไม่ได้, คำร้องที่ปิดแล้วรับ action ไม่ได้, bulk เกิน 100 รายการถูกปฏิเสธ, PDF/รายงาน id ผิดไม่ 500<br>**Mutation:** เลขใบงานไม่ซ้ำเมื่อสร้างพร้อมกัน, CRUD master data/ประเภท/เหตุผล/workflow transition ย้อนกลับได้, เปลี่ยน role/ปิดผู้ใช้แล้วสิทธิ์เดิมใช้ไม่ได้, รหัสผ่าน/ลายเซ็น, อัปโหลดไฟล์ปลอม/ใหญ่เกินถูกปฏิเสธ, **สร้าง → ส่งกลับ → ส่งใหม่ → อนุมัติทุกขั้น → ล้างข้อมูล**, ผู้อนุมัติต่างแผนแก้ไม่ได้, ไฟล์แนบ/PDF เห็นได้เฉพาะเจ้าของหรือผู้อนุมัติ, bulk reject คืนสถานะส่งกลับ |
+| `workflow-edge-cases.spec.js` | วงจรของ token ลิงก์อีเมล (token ปลอม, ใช้ได้ครั้งเดียว, token ก่อนส่งกลับใช้กับรอบใหม่ไม่ได้, ผิดคนอนุมัติไม่ได้, ผู้อนุมัติที่ถูกปิดกลางทางใช้ไม่ได้), ลบผู้ใช้/หมวดที่ยังมีคำร้องค้างต้องไม่พัง, คำร้องที่ไม่มีผู้อนุมัติต้องแจ้ง Admin, ช่วงวันที่รายงาน, PDF ข้อความไทยยาวต่อหน้าถัดไป, `/api/health` |
+| `mobile.spec.js` | viewport มือถือ: หน้าหลักไม่ล้นจอ, สร้างคำร้องครบด้วยการสัมผัส, อัปโหลดลายเซ็นตรวจที่เซิร์ฟเวอร์ |
+
+**ยังไม่มีเทสต์อัตโนมัติสำหรับ:** เมนู/drawer มือถือ (บั๊กที่เมนูกดแล้วไม่เปิดเคยหลุดเพราะเหตุนี้), การ์ดรายการงานรอบนมือถือ,
+workflow versioning (สร้าง draft/publish/archive/simulator), `approvalRound` หลังส่งใหม่ — ทั้งหมดตรวจด้วยมือแล้วแต่ยังไม่ถูกเขียนเป็น E2E
+
+## เทสต์อื่น
 
 ```powershell
-$env:TEST_PASSWORD = '<seeded-test-password>'
-$env:RUN_MUTATION_TESTS = 'true'
-npm run test:e2e:mutation
+npm test               # unit (vitest, เฉพาะ lib/**/*.test.ts) — ไม่แตะฐานข้อมูล
+npm run test:db        # เทสต์ที่ต้องใช้ฐานข้อมูลจริง รันเฉพาะ lib/document-number.db.test.ts ผ่าน scripts/run-db-tests.mjs
 ```
 
-To watch the browser actions:
+## ลองมือกับ dev server
 
-```powershell
-$env:HEADED = 'true'
-$env:TEST_PASSWORD = '<seeded-test-password>'
-$env:RUN_MUTATION_TESTS = 'true'
-npx playwright test tests/e2e/requestonline.spec.js -g "create, reject, resubmit"
-```
-
-The mutation test rejects a request without a comment first, verifies that the
-state is unchanged, then runs reject → edit/resubmit → each configured approval
-stage → cleanup. It also verifies that an admin-only delete succeeds.
+`npm run dev` ใช้ฐานข้อมูลและ `INTERNAL_EMAIL_API_URL` จาก `.env` ตรงๆ โดยไม่ผ่าน sink
+ถ้าจะลองอนุมัติ/สร้างคำร้องด้วยมือ ให้เปิด sink ก่อน หรือใช้บัญชี seed ที่อีเมลเป็น `@example.com`
