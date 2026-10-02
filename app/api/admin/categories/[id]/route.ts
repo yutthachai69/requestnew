@@ -45,9 +45,10 @@ export async function DELETE(
   const id = Number((await params).id);
   if (!id) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   try {
-    const [requestCount, transitionCount, docConfigCount] = await Promise.all([
+    const [requestCount, transitionCount, versionCount, docConfigCount] = await Promise.all([
       prisma.iTRequestF07.count({ where: { categoryId: id } }),
       prisma.workflowTransition.count({ where: { categoryId: id } }),
+      prisma.workflowVersion.count({ where: { categoryId: id } }),
       prisma.docConfig.count({ where: { categoryId: id } }),
     ]);
     if (requestCount > 0) {
@@ -59,6 +60,15 @@ export async function DELETE(
     if (transitionCount > 0) {
       return NextResponse.json(
         { message: `ไม่สามารถลบได้ เพราะมีขั้นตอน Workflow ที่ใช้หมวดหมู่นี้อยู่ กรุณาลบหรือเปลี่ยนหมวดหมู่ใน "ตั้งค่า Workflow" ก่อน` },
+        { status: 409 }
+      );
+    }
+    // Versions are not deleted on the admin's behalf: requests created under them keep pointing at them, and
+    // there is no API to remove one (nor a way to deactivate a category). Say so, rather than let the
+    // foreign key answer with a generic 409.
+    if (versionCount > 0) {
+      return NextResponse.json(
+        { message: `ไม่สามารถลบได้ เพราะหมวดหมู่นี้มี Workflow Version อยู่ ${versionCount} รายการ (รวมฉบับร่างและฉบับที่เลิกใช้แล้ว) ซึ่งยังลบผ่านระบบไม่ได้ (ต้องให้ผู้ดูแลฐานข้อมูลดำเนินการ)` },
         { status: 409 }
       );
     }
