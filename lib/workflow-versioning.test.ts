@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { conditionMatches, validateWorkflowTransitions } from './workflow-versioning';
+import { conditionMatches, validateWorkflowTransitions, workflowVersionDeleteBlocker } from './workflow-versioning';
 
 describe('workflow versioning', () => {
   it('selects the correct account recheck branch', () => {
@@ -77,5 +77,24 @@ describe('workflow versioning', () => {
     expect(validateWorkflowTransitions([
       { currentStatusId: 1, nextStatusId: 2, actionName: 'APPROVE', conditionKey: 'TYPO' },
     ], 1, [2]).valid).toBe(false);
+  });
+});
+
+describe('workflowVersionDeleteBlocker', () => {
+  it('lets an unused draft go', () => {
+    expect(workflowVersionDeleteBlocker({ status: 'DRAFT', requestCount: 0 })).toBeNull();
+  });
+
+  it.each(['PUBLISHED', 'ARCHIVED'])('keeps a %s version, which is history', (status) => {
+    expect(workflowVersionDeleteBlocker({ status, requestCount: 0 })).toMatch(/Draft/);
+  });
+
+  it('keeps a version a request is pinned to, whatever its status', () => {
+    expect(workflowVersionDeleteBlocker({ status: 'DRAFT', requestCount: 3 })).toMatch(/3/);
+    expect(workflowVersionDeleteBlocker({ status: 'ARCHIVED', requestCount: 3 })).not.toBeNull();
+  });
+
+  it('does not treat an unknown status as deletable', () => {
+    expect(workflowVersionDeleteBlocker({ status: 'WHATEVER', requestCount: 0 })).not.toBeNull();
   });
 });

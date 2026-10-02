@@ -14,6 +14,24 @@ export const WORKFLOW_CONDITIONS = {
 
 type Db = typeof prisma | any;
 
+/**
+ * Why a workflow version may not be deleted, or null when it may.
+ *
+ * Only a draft can go: it has never been live, so nothing depends on its rules. A published or archived
+ * version is history — requests were routed by it — and any request pinned to a version keeps it alive.
+ * The route checks this inside the transaction that deletes, so a version published a moment earlier is
+ * not removed.
+ */
+export function workflowVersionDeleteBlocker(version: { status: string; requestCount: number }): string | null {
+  if (version.status !== WORKFLOW_VERSION_STATUS.DRAFT) {
+    return 'ลบได้เฉพาะฉบับร่าง (Draft) เท่านั้น เวอร์ชันที่เคย Publish ต้องเก็บไว้เป็นประวัติของคำร้องที่ใช้งานมา';
+  }
+  if (version.requestCount > 0) {
+    return `ลบไม่ได้ เพราะมีคำร้อง ${version.requestCount} รายการอ้างอิงเวอร์ชันนี้อยู่`;
+  }
+  return null;
+}
+
 export function conditionMatches(conditionKey: string | null | undefined, requiresAccountRecheck?: boolean) {
   const key = conditionKey || WORKFLOW_CONDITIONS.ALWAYS;
   if (key === WORKFLOW_CONDITIONS.ALWAYS) return true;

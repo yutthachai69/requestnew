@@ -556,7 +556,7 @@ test.describe('RequestOnline mutation workflow', () => {
     const context = await browser.newContext();
     await localOnly(context);
     const page = await context.newPage();
-    const created = { categoryId: null, transitionId: null };
+    const created = { categoryId: null, transitionId: null, draftId: null };
     const suffix = Date.now();
 
     try {
@@ -587,9 +587,20 @@ test.describe('RequestOnline mutation workflow', () => {
       expect(categoryCreate.status()).toBe(200);
       created.categoryId = (await categoryCreate.json()).CategoryID;
 
+      // Transitions belong to a workflow version and a published one is read-only, so a brand-new
+      // category has nothing to add them to until it has a draft — the way the admin page does it.
+      const draftCreate = await page.request.post('/api/admin/workflow-versions', {
+        data: { categoryId: created.categoryId, label: 'E2E draft' },
+      });
+      expect(draftCreate.status()).toBe(201);
+      const draft = await draftCreate.json();
+      expect(draft.status).toBe('DRAFT');
+      created.draftId = draft.id;
+
       const transitionCreate = await page.request.post('/api/admin/workflow-transitions', {
         data: {
           categoryId: created.categoryId,
+          workflowVersionId: draft.id,
           currentStatusId: currentStatus.id,
           actionId: action.id,
           requiredRoleId: role.RoleID,
@@ -614,9 +625,39 @@ test.describe('RequestOnline mutation workflow', () => {
       const transitionDelete = await page.request.delete(`/api/admin/workflow-transitions/${created.transitionId}`);
       expect(transitionDelete.status()).toBe(200);
       created.transitionId = null;
+
+      // A published version is history and must refuse deletion, whatever the caller is.
+      const published = (await (await page.request.get('/api/admin/workflow-versions?categoryId=1')).json())
+        .find((version) => version.status === 'PUBLISHED');
+      expect(published, 'category 1 needs a published version for this check').toBeTruthy();
+      const deletePublished = await page.request.delete(`/api/admin/workflow-versions/${published.id}`);
+      expect(deletePublished.status()).toBe(409);
+
+      // Deleting a draft takes its transitions with it. Leave one in place to prove that.
+      const second = await page.request.post('/api/admin/workflow-transitions', {
+        data: {
+          categoryId: created.categoryId,
+          workflowVersionId: draft.id,
+          currentStatusId: currentStatus.id,
+          actionId: action.id,
+          requiredRoleId: role.RoleID,
+          nextStatusId: nextStatus.id,
+          stepSequence: 92,
+        },
+      });
+      expect(second.status()).toBe(200);
+      const draftDelete = await page.request.delete(`/api/admin/workflow-versions/${draft.id}`);
+      expect(draftDelete.status()).toBe(200);
+      created.draftId = null;
+      const remaining = await page.request.get(`/api/admin/workflow-transitions?categoryId=${created.categoryId}`);
+      expect(await remaining.json()).toEqual([]);
     } finally {
       if (created.transitionId) {
         const response = await page.request.delete(`/api/admin/workflow-transitions/${created.transitionId}`);
+        expect([200, 404]).toContain(response.status());
+      }
+      if (created.draftId) {
+        const response = await page.request.delete(`/api/admin/workflow-versions/${created.draftId}`);
         expect([200, 404]).toContain(response.status());
       }
       if (created.categoryId) {

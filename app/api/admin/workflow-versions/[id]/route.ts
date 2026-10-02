@@ -2,7 +2,7 @@ import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { handleApiError } from '@/lib/api-error';
-import { validateWorkflowVersion, WORKFLOW_VERSION_STATUS } from '@/lib/workflow-versioning';
+import { validateWorkflowVersion, workflowVersionDeleteBlocker, WORKFLOW_VERSION_STATUS } from '@/lib/workflow-versioning';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin(); if (isAuthError(auth)) return auth;
@@ -47,4 +47,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (version.status === WORKFLOW_VERSION_STATUS.PUBLISHED) return NextResponse.json({ message: 'ต้องสร้าง Draft ใหม่ก่อนแก้ไขเวอร์ชันที่ Publish แล้ว' }, { status: 409 });
     return NextResponse.json(await prisma.workflowVersion.update({ where: { id }, data: { label: body.label == null ? version.label : String(body.label) } }));
   } catch (e) { return handleApiError(e, 'PUT workflow version'); }
+}
+
+/** DELETE /api/admin/workflow-versions/[id] — remove an unused draft (and its transitions). Nothing else is deletable. */
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdmin(); if (isAuthError(auth)) return auth;
+  const id = Number((await params).id); if (!id) return NextResponse.json({ message: 'Invalid id' }, { status: 400 });
+  try {
+    // The check and the delete share one transaction: a draft published a moment ago must not be removed.
+    const outcome = await prisma.$transaction(async (tx) => {
+      const version = await tx.workflowVersion.findUnique({ where: { id }, select: { status: true, _count: { select: { requests: true } } } });
+      if (!version) return { notFound: true as const };
+      const blocker = workflowVersionDeleteBlocker({ status: version.status, requestCount: version._count.requests });
+      if (blocker) return { blocker };
+      await tx.workflowTransition.deleteMany({ where: { workflowVersionId: id } });
+      await tx.workflowVersion.delete({ where: { id } });
+      return { ok: true as const };
+    });
+    if ('notFound' in outcome) return NextResponse.json({ message: 'ไม่พบ Workflow Version' }, { status: 404 });
+    if ('blocker' in outcome) return NextResponse.json({ message: outcome.blocker }, { status: 409 });
+    return NextResponse.json({ ok: true });
+  } catch (e) { return handleApiError(e, 'DELETE workflow version'); }
 }
